@@ -1,0 +1,3 @@
+rootProject.name = 'example-service'
+include("example",":base")
+project(":base").projectDir = file("../base")

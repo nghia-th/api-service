@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: example
+  datasource:
+    username: postgres
+    password: Chuyenviet@1234
+springdoc:
+  swagger-ui:
+    path: /api.html
+    defaultModelsExpandDepth: -1
+  api-docs:
+    path: /doc
+mybatis:
+  mapper-locations: file:./mapper/*.xml
+
+base:
+  database:
+    type: POSTGRESQL              # SQLITE / POSTGRESQL / MYSQL / SQLSERVER / ORACLE (mac dinh SQLITE)
+    db-name: example_db           # ten database thuc te (mac dinh "app")
+    dbPrefix: dev                 # ghep truoc db-name -> "dev_example_db" (mac dinh rong "")
+    sql-log: OFF                  # OFF / BASIC / FULL (mac dinh OFF)
+    pool:
+      max-pool-size: 5            # HikariCP (mac dinh 5)
+      min-idle: 1                 # HikariCP (mac dinh 1)
+    postgresql:
+      host: localhost             # mac dinh localhost
+      port: 5432                  # mac dinh 5432
+    mysql:
+      host: localhost             # mac dinh localhost (dang dung Postgres nen phan nay chua can, de tham khao)
+      port: 3306                  # mac dinh 3306
+    sqlserver:
+      host: localhost             # mac dinh localhost
+      port: 1433                  # mac dinh 1433
+    oracle:
+      jdbc-url: jdbc:oracle:thin:@//localhost:1521/XEPDB1  # Oracle van dung URL day du, khong tach host/port
+    sqlite:
+      file-name: app.db
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{requestId:-}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{requestId:-}] %logger{36} - %msg%n"
+
+lang:
+  support: vi,en
+  react-build: build
+
