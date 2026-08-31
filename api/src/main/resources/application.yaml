@@ -45,3 +45,12 @@ lang:
   support: vi,en
   react-build: build
 
+# Auth (task 1) - quiz-service-only config, not part of base.
+quiz:
+  jwt:
+    # DEV ONLY placeholder (32+ chars, required for HMAC-SHA256) - replace with a real secret
+    # via an env-specific override (env var / profile) before any non-local deployment. Never
+    # commit a real production secret here.
+    secret: "quiz-service-dev-only-jwt-secret-change-me-32bytes-min"
+    expiration-minutes: 1440   # 24h
+

@@ -15,6 +15,31 @@ dependencies {
 	implementation project(':base')
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.0.1'
+
+	// Auth (task 1) - BCrypt only, not full Spring Security; version comes from Spring Boot's
+	// dependency-management BOM, same as spring-boot-starter-webmvc above.
+	implementation 'org.springframework.security:spring-security-crypto'
+
+	// Bean Validation (@Valid/@NotBlank/... on request DTOs) - base's GlobalExceptionHandler
+	// already has a handler for MethodArgumentNotValidException, this was just never exercised
+	// before since api-service's demo entities had no real input validation.
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	// OpenAPI annotations (@Schema/@Operation/@Tag/@ApiResponses) on our own DTOs/controllers.
+	// base already depends on this (as 'implementation') for its own OpenAPI bean + LanguageRequest's
+	// @Schema, but Gradle's 'implementation' never leaks to a project-dependency consumer's compile
+	// classpath (same reason mybatis-spring-boot-starter is redeclared above even though base has
+	// it too) - so it must be redeclared here for our own annotations to compile. compileOnly, not
+	// implementation: the actual springdoc runtime classes are already on the runtime classpath via
+	// base, this only needs to be visible at compile time (same reasoning as lombok below).
+	compileOnly 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0'
+
+	// Auth (task 1) - JWT. jjwt-gson (not jjwt-jackson) on purpose: base is on Jackson 3
+	// (tools.jackson.*, see JsonUtils), jjwt's Jackson support still targets Jackson 2 - see
+	// the javadoc on security/JwtUtil.java for the full reasoning.
+	implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
+	runtimeOnly 'io.jsonwebtoken:jjwt-gson:0.13.0'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter-test:4.0.1'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
