@@ -1,185 +1,136 @@
-# api-service
+# quiz-service — "Hiểu Bài"
 
-Tài liệu này dành cho dev tham gia repo `api-service` (thư mục/repo trước đây tên `example-service`) — mô tả cấu trúc thư mục thật, quy tắc viết code, và các cạm bẫy đã gặp trong quá trình dựng project. Đọc file này trước khi bắt đầu thêm nghiệp vụ mới, để làm đúng ngay từ đầu thay vì phải sửa lại nhiều vòng.
+Backend cho ứng dụng giúp phụ huynh tạo bài kiểm tra trắc nghiệm theo bài học, giao cho con làm, và xem kết quả theo mảng kiến thức để biết con hiểu bài đến đâu. Repo này là bản clone từ `api-service` (dùng chung thư viện `base`) — kế thừa toàn bộ hạ tầng ORM/query DSL/error handling/đa hệ CSDL, chỉ khác phần nghiệp vụ.
 
-Tài liệu kỹ thuật chi tiết về thư viện dùng chung `base` (API đầy đủ của ORM/query DSL, error handling, đa hệ CSDL, i18n...) nằm ở `../base/README.md` (tiếng Anh) — file này **không lặp lại** nội dung đó, chỉ tập trung vào cách tổ chức + quy tắc riêng của workspace này.
+**Trạng thái hiện tại: repo mới clone, chưa bắt đầu code nghiệp vụ thật.** Trước khi đọc tiếp file này, đọc `docs/00-tong-quan-san-pham.md` và `docs/01-thiet-ke-tong-the.md` để biết đang xây cái gì — file README này chỉ nói *cách* tổ chức code, không nói *xây gì*. Việc cần code cụ thể nằm ở `docs/dev/*.md`, đọc theo đúng thứ tự `01` → `07`.
 
-## 1. Sơ đồ workspace
+## 1. Tài liệu chức năng (đọc trước khi code bất kỳ task nào)
 
-Project gồm 2 repo Git riêng biệt, nằm cạnh nhau trên máy:
+```
+docs/
+├── 00-tong-quan-san-pham.md   — bối cảnh, phạm vi MVP, luồng chức năng chính
+├── 01-thiet-ke-tong-the.md    — kiến trúc, data model đầy đủ (10 entity), auth & phân quyền, quy tắc API
+└── dev/                        — 1 file / chức năng, đủ chi tiết để code trực tiếp
+    ├── 00-quy-uoc-chung.md
+    ├── 01-xac-thuc-phan-quyen.md   ← làm trước tiên, mọi API khác phụ thuộc vào đây
+    ├── 02-quan-ly-ho-so-con.md
+    ├── 03-mon-hoc-bai-hoc.md
+    ├── 04-ngan-hang-cau-hoi.md
+    ├── 05-tao-giao-bai-kiem-tra.md
+    ├── 06-hoc-sinh-lam-bai.md
+    └── 07-ket-qua-bao-cao.md
+```
+
+## 2. Sơ đồ workspace
 
 ```
 java-project/
-├── api-service/     <- repo này (Gradle root project, có submodule "api" bên trong)
-└── base/            <- repo riêng, thư viện dùng chung (xem base/README.md)
+├── quiz-service/    <- repo này (Gradle root project, submodule "api" bên trong)
+├── api-service/      <- repo gốc đã clone từ đây, không liên quan tới quiz-service nữa
+└── base/               <- repo riêng, thư viện dùng chung (xem base/README.md)
 ```
 
-`api-service/settings.gradle` include `base` bằng đường dẫn tương đối `../base`:
+`settings.gradle` include `base` bằng đường dẫn tương đối `../base`:
 
 ```groovy
-rootProject.name = 'api-service'
+rootProject.name = 'quiz-service'
 include("api", ":base")
 project(":base").projectDir = file("../base")
 ```
 
-Nghĩa là `base` **phải nằm ngay cạnh** (sibling) `api-service` trên máy — không tự ý đổi vị trí nếu không sửa `settings.gradle` theo.
+`base` **phải nằm ngay cạnh** (sibling) `quiz-service` trên máy. `git remote` hiện **vẫn trỏ về `api-service.git`** (giữ nguyên từ lúc clone) — cần đổi sang repo GitHub riêng cho `quiz-service` trước khi push, không thì đẩy nhầm vào repo cũ.
 
-> **Về việc đổi tên (đã cập nhật):** module Gradle của service nghiệp vụ đã đổi tên từ `:example` sang `:api` (thư mục `example/` → `api/`), và `rootProject.name` cũng đã sửa khớp `api-service`. **Lưu ý dễ nhầm:** package Java bên trong — `vn.org.thn.service.app.example.*` — vẫn giữ nguyên tên `example` (đây là tên gói nghiệp vụ mẫu, không phải tên module Gradle) — 2 khái niệm khác nhau, đừng nhầm khi đọc code hay import.
+## 3. Việc dọn dẹp cần làm đầu tiên (trước khi viết entity thật)
 
-## 2. Cấu trúc thư mục `api-service`
+Repo hiện vẫn còn nguyên cruft kế thừa từ `api-service`:
+
+- 4 entity demo `Category`/`StockLevel`/`Tag`/`Article` (cả 4 layer: entity/repository/service/api/dto) trong `api/src/main/java/vn/org/thn/service/app/example/`.
+- Package nghiệp vụ vẫn tên `example` — **cần đổi thành `quiz`** (`vn.org.thn.service.app.quiz.*`), đã chốt trong `docs/01-thiet-ke-tong-the.md`.
+- Migration `database/*/V1__init.sql` + `V2__example_entities.sql` (bảng `translate`/demo, không liên quan `quiz-service`) — bắt đầu lại từ `V1__` mới cho các bảng thật.
+- `application.yaml` (`api/src/main/resources/`) vẫn còn nguyên giá trị demo: `spring.application.name: example`, `db-name: example_db`, `dbPrefix: dev` → cần đổi tên database cho đúng sản phẩm trước khi chạy thật.
+
+Xem chi tiết ở `docs/dev/00-quy-uoc-chung.md`.
+
+## 4. Cấu trúc thư mục
 
 ```
-api-service/
-├── build.gradle, settings.gradle      # root Gradle project, include :api và :base
-├── database/                          # migration SQL (Flyway), 1 thư mục con / engine
-│   ├── sqlite/       Vx__*.sql
-│   ├── postgresql/   Vx__*.sql
-│   ├── mysql/        Vx__*.sql
-│   ├── sqlserver/    Vx__*.sql
-│   └── oracle/       Vx__*.sql
-├── mapper/                            # MyBatis XML mapper dùng chung (DynamicSQL.xml)
-├── lang/                               # file JSON đa ngôn ngữ (vi.json/en.json) — tự sinh lúc app khởi động
-├── data/                                # file DB SQLite (app.db) khi type=SQLITE
-├── logs/                                 # log runtime (info_*.log / error_*.log)
-└── api/                                    # submodule Gradle ":api" — service nghiệp vụ thật
-    ├── build.gradle
+quiz-service/
+├── build.gradle, settings.gradle
+├── database/<engine>/Vn__*.sql        # migration Flyway, 5 engine song song
+├── mapper/                             # MyBatis XML mapper dùng chung
+├── lang/, data/, logs/                  # runtime — xem base/README.md
+├── docs/                                 # tài liệu chức năng, xem mục 1
+└── api/                                   # submodule Gradle ":api" — service nghiệp vụ
     └── src/main/java/vn/org/thn/service/app/
-        ├── AppApplication.java            # entrypoint Spring Boot — KHÔNG đổi package này
-        └── example/                        # package con — tên gói nghiệp vụ (giữ nguyên "example", không đổi theo tên module)
-            ├── api/         *Api.java       # REST controller, extends BaseCtl
-            ├── service/     *Service.java   # business logic, extends IBase
+        ├── AppApplication.java
+        └── quiz/                          # package nghiệp vụ (đích đến sau khi đổi từ "example")
+            ├── api/         *Api.java       # extends BaseCtl, base path /api/parent/** hoặc /api/student/**
+            ├── service/     *Service.java   # extends IBase
             ├── repository/  *Repository.java # extends BaseRepositoryImpl<Entity, IdType>
-            ├── entity/      *.java           # @Entity @Table, tự khai @Id riêng
-            └── dto/         *Request.java     # request body
+            ├── entity/      *.java
+            ├── dto/         *Request.java
+            ├── security/     JwtAuthFilter, JwtUtil, CurrentUser  # mới — xem docs/dev/01
+            └── exception/    QuizErrorCode.java implements ErrorCode
 ```
 
-**Vì sao có 1 package con `example` bên trong `app`:** `example` ở đây là tên nghiệp vụ/service (đặt từ đầu, chưa đổi theo tên module Gradle), tách khỏi package gốc `app` (chứa `AppApplication`). Nếu sau này service này có thêm nghiệp vụ khác, tạo thêm 1 package con mới cùng cấp `example` (ví dụ `app.order`, `app.inventory`...), không nhét trực tiếp vào `app`. Nếu muốn đổi luôn tên package `example` cho khớp tên module `api`, cần sửa lại `package`/import ở toàn bộ ~20 file trong `api/src/main/java/.../app/example/` — chưa làm, báo em nếu anh muốn đổi.
+cwd khi chạy app là `quiz-service/` (thư mục gốc, không phải `api/`) — `DatabasePath` trong `base` dựa vào cwd lúc chạy, không phải thư mục source. Đó là lý do `database/`, `mapper/`, `lang/`, `data/` nằm ở gốc.
 
-**cwd khi chạy app rất quan trọng:** `DatabasePath` (trong `base`) lấy đường dẫn tương đối theo *thư mục làm việc lúc app chạy* (cwd), không phải thư mục source code. Chạy `:api:bootRun` (qua IntelliJ hay terminal) thì cwd là `api-service/` (thư mục gốc) — đó là lý do `database/`, `mapper/`, `lang/`, `data/` đều nằm ở gốc `api-service/`, không phải bên trong `api/`.
+## 5. Quy ước code (kế thừa từ `api-service`, không đổi)
 
-## 3. Quy tắc thêm nghiệp vụ mới
+- **Layer, không phải feature-based**: entity/service/repository/api mới đi vào đúng thư mục layer trong `api/.../app/quiz/`.
+- Naming: `entity/Xxx`, `repository/XxxRepository extends BaseRepositoryImpl<Xxx, IdType>`, `service/XxxService extends IBase`, `api/XxxApi extends BaseCtl` (**không** `XxxController`), `dto/XxxRequest`.
+- **Lombok `@Data`** cho mọi entity/DTO. Entity `extends BaseEntity` bắt buộc thêm `@EqualsAndHashCode(callSuper = true)` + `@ToString(callSuper = true)` — thiếu sẽ khiến Lombok âm thầm bỏ qua 5 field kế thừa khi sinh `equals`/`hashCode`/`toString`.
+- **`BaseEntity` không có field `id`** — mỗi entity tự khai `@Id` theo đúng kiểu khoá nó cần.
+- 4 field audit của `BaseEntity` **không tự động điền** — service phải tự gán trước khi `save()`.
+- **Lỗi nghiệp vụ**: luôn `BusinessException(errorCode[, message])`, không exception JDK trần. Định nghĩa lỗi riêng của `quiz-service` ở `exception/QuizErrorCode.java` implements `ErrorCode`, tách khỏi `CommonErrorCode`.
+- **Query CSDL**: ưu tiên `QueryBuilder`/`UpdateBuilder`/`DeleteBuilder` (method reference thay vì chuỗi tên field). `UpdateBuilder.execute()`/`DeleteBuilder.execute()` bắt buộc có ít nhất 1 điều kiện WHERE.
+- **Phân quyền dữ liệu (riêng của `quiz-service`, không có trong `base`):** mọi `*Service` khi query/update phải lọc theo `parentId`/`studentId` lấy từ `CurrentUser` (xem `docs/dev/01`) — không dùng `findAll()`/`findById()` trần cho dữ liệu thuộc về 1 Parent/Student cụ thể, phải luôn kèm điều kiện sở hữu. Đây là lỗi dễ mắc nhất nếu copy nguyên khuôn từ `api-service` (vốn không cần phân quyền theo user).
 
-Chia theo **layer** (không phải feature-based) — entity/service/repository/api mới đều đi vào đúng 5 thư mục layer có sẵn trong `api/.../app/example/`, **không** tạo thêm thư mục con theo tên nghiệp vụ riêng.
+Chi tiết API/entity/business rule của từng chức năng: xem `docs/dev/*.md`, không lặp lại ở đây. Chi tiết cách dùng `QueryBuilder`/repository/composite key: xem `../base/README.md`.
 
-Quy ước đặt tên (theo đúng 4 entity mẫu `Category`/`StockLevel`/`Tag`/`Article` đã có sẵn để tham khảo):
-
-| Layer | Tên class | Kế thừa | Ghi chú |
-|---|---|---|---|
-| `entity` | `Xxx` | tuỳ chọn `extends BaseEntity` | tự khai `@Id` (+ `@GeneratedValue` nếu tự tăng); nếu `extends BaseEntity` phải thêm `@EqualsAndHashCode(callSuper = true)` + `@ToString(callSuper = true)` cạnh `@Data` (xem mục 4) |
-| `repository` | `XxxRepository` | `extends BaseRepositoryImpl<Xxx, IdType>` | `@Repository`, không cần viết method gì thêm cho CRUD cơ bản |
-| `service` | `XxxService` | `extends IBase` | `@Service`, nghiệp vụ thật, ném `BusinessException` khi lỗi (xem mục 4) |
-| `api` | `XxxApi` | `extends BaseCtl` | `@RestController`, dùng `ok(...)`/`fail(...)` để trả `ApiResponse` — **không** đặt tên `XxxController` |
-| `dto` | `XxxRequest` | — | request body; response trả thẳng entity hoặc `PageResponse<Xxx>`, không cần DTO response riêng trừ khi cần ẩn field |
-
-Ví dụ mẫu tối thiểu (rút gọn từ `Category` đã có sẵn trong `api/src/main/java/vn/org/thn/service/app/example/{entity,repository,service,api}/Category*.java`):
-
-```java
-// entity
-@Data
-@Entity
-@Table(name = "category")
-public class Category {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-    private String code;
-    private String name;
-    private Boolean active;
-}
-
-// repository
-@Repository
-public class CategoryRepository extends BaseRepositoryImpl<Category, Long> {}
-
-// service
-@Service
-public class CategoryService extends IBase {
-    @Autowired
-    private CategoryRepository categoryRepository;
-
-    public Category get(Long id) {
-        return categoryRepository.findById(id)
-                .orElseThrow(() -> new BusinessException(CommonErrorCode.NOT_FOUND));
-    }
-}
-
-// api
-@RestController
-@RequestMapping("/example/category")
-public class CategoryApi extends BaseCtl {
-    @Autowired
-    private CategoryService categoryService;
-
-    @GetMapping("/{id}")
-    public ApiResponse<Category> get(@PathVariable Long id) {
-        return ok(categoryService.get(id));
-    }
-}
-```
-
-Chi tiết cách dùng `QueryBuilder`/`UpdateBuilder`/`DeleteBuilder`, composite key, native query escape hatch... xem `base/README.md` mục "Repositories" / "The query DSL".
-
-## 4. Quy ước code
-
-- **Lombok `@Data`** cho mọi entity/DTO mới (đã áp dụng cho toàn bộ entity/DTO hiện có, không viết getter/setter tay). Ngoại lệ: class chỉ dựng qua factory method tĩnh, không có setter, cần giữ bất biến — như `ApiResponse`/`PageResponse` — dùng `@Getter` thay vì `@Data` để không tự sinh setter phá vỡ tính bất biến.
-- Entity `extends BaseEntity` **bắt buộc** thêm `@EqualsAndHashCode(callSuper = true)` + `@ToString(callSuper = true)` cạnh `@Data` (xem `Article.java` làm mẫu) — thiếu 2 annotation này thì Lombok sẽ **âm thầm bỏ qua 5 field kế thừa** (`createdAt`/`updatedAt`/`createdBy`/`updatedBy`/`deleted`) khi sinh `equals`/`hashCode`/`toString`.
-- **`BaseEntity` không có field `id`** — mỗi entity tự khai khoá chính theo đúng kiểu nó cần (tự tăng/String tự đặt/UUID/khoá kép). Đây là quyết định thiết kế có chủ đích, không phải thiếu sót — không thêm `id` vào `BaseEntity`.
-- 4 field audit của `BaseEntity` (`createdAt`/`updatedAt`/`createdBy`/`updatedBy`) **không tự động điền** — không có interceptor nào set hộ. Nếu entity kế thừa `BaseEntity`, service phải tự gán các field này (thường từ `LocalDateTime.now()` + user hiện tại) trước khi gọi `save()` — xem `ArticleService` làm ví dụ. `deleted` cũng chỉ là cột dữ liệu thường, không tự lọc — muốn soft-delete phải tự thêm điều kiện `.eq(Entity::isDeleted, false)` vào query và tự set flag thay vì gọi `deleteById()`.
-- **Lỗi nghiệp vụ**: luôn ném `BusinessException(errorCode[, message])`, không ném exception JDK trần (`NoSuchElementException`, `IllegalStateException`...) — `GlobalExceptionHandler` chỉ trả đúng HTTP status (404, 400...) qua `ApiResponse` chuẩn khi bắt được `BusinessException`/`BaseException`; exception JDK trần sẽ rơi vào handler catch-all 500 chung chung. Định nghĩa mã lỗi riêng cho từng service bằng 1 enum implements `ErrorCode`, tách khỏi `CommonErrorCode` (chỉ dùng cho lỗi dùng chung mọi service, xem `base/exception/CommonErrorCode.java`).
-- **Controller** đặt tên `*Api` (không phải `*Controller`), extends `BaseCtl`, trả về qua `ok(...)`/`fail(...)`.
-- **Query CSDL**: ưu tiên `QueryBuilder`/`UpdateBuilder`/`DeleteBuilder` (fluent DSL) — ưu tiên overload dùng method reference (`Category::getName`) thay vì chuỗi tên field để an toàn lúc compile. Chỉ dùng native SQL (`nativeQuery`/`mapper(...)`) khi DSL không biểu diễn được.
-- `UpdateBuilder.execute()`/`DeleteBuilder.execute()` bắt buộc phải có ít nhất 1 điều kiện WHERE — DSL tự chặn UPDATE/DELETE toàn bảng do quên điều kiện, không cần tự kiểm tra thêm.
-
-## 5. Cấu hình đa hệ quản trị CSDL (tóm tắt)
-
-Chi tiết đầy đủ ở `base/README.md` mục "Multi-database support". Tóm tắt phần hay chỉnh nhất, đọc trực tiếp trong `api/src/main/resources/application.yaml`:
+## 6. Cấu hình đa hệ quản trị CSDL (tóm tắt, chi tiết ở `base/README.md`)
 
 ```yaml
 base:
   database:
-    type: POSTGRESQL              # SQLITE / POSTGRESQL / MYSQL / SQLSERVER / ORACLE (mặc định SQLITE)
-    db-name: example_db           # tên database thật (mặc định "app")
-    dbPrefix: dev                 # ghép trước db-name -> "dev_example_db" (mặc định rỗng)
+    type: POSTGRESQL              # SQLITE / POSTGRESQL / MYSQL / SQLSERVER / ORACLE
+    db-name: example_db           # ⚠ vẫn là giá trị demo — cần đổi tên database thật cho quiz-service
+    dbPrefix: dev
     postgresql:
       host: localhost
       port: 5432
-    # mysql / sqlserver / oracle / sqlite: xem base/README.md — chỉ có tác dụng khi `type` chọn đúng engine đó
 ```
 
-**Lưu ý quan trọng đang áp dụng thật (dev tự kiểm tra khi debug DB):** `dbPrefix: dev` đang được set trong file → tên database thật app đang dùng là **`dev_example_db`**, không phải `example_db`. Nếu vào psql/DBeaver mà connect thẳng `example_db` sẽ không thấy bảng nào.
+Đổi engine: `base.database.type` (hoặc env `BASE_DATABASE_TYPE`). DB đích tự tạo nếu chưa tồn tại (Postgres/MySQL/SQL Server) — Oracle không tự tạo PDB, cần có sẵn.
 
-Đổi engine: set `base.database.type` (hoặc biến môi trường `BASE_DATABASE_TYPE`) sang `MYSQL`/`SQLSERVER`/`ORACLE`/`SQLITE`. DB đích sẽ được tự tạo nếu chưa tồn tại (Postgres/MySQL/SQL Server) — riêng Oracle không tự tạo PDB, phải có sẵn (mặc định `XEPDB1` của Oracle XE là đủ dùng cho dev).
+## 7. Migration SQL (Flyway)
 
-## 6. Migration SQL (Flyway)
+Vị trí: `database/<engine>/Vn__<mo_ta>.sql`, **5 engine song song**. Không cần `IF NOT EXISTS`. Cột text nên nullable (Oracle coi `''` là `NULL`). Cột tự tăng khai khác nhau theo engine — xem `../base/README.md` hoặc migration mẫu còn sót lại trong `database/*/V1__init.sql` (sẽ bị thay bằng migration thật của `quiz-service`, xem mục 3).
 
-- Vị trí: `api-service/database/<engine>/Vn__<mo_ta>.sql` — **5 engine luôn phải viết song song** khi thêm bảng mới (không chỉ viết cho Postgres rồi bỏ quên MySQL/SQL Server/Oracle/SQLite), vì `type` trong `application.yaml` có thể đổi sang engine khác bất cứ lúc nào.
-- Không cần `IF NOT EXISTS` — Flyway tự đảm bảo 1 script chỉ chạy đúng 1 lần qua bảng `flyway_schema_history`, thêm guard này chỉ làm SQL Server/Oracle phức tạp hoá không cần thiết.
-- Cột kiểu text nên để **nullable** (không `NOT NULL`) trừ khi thực sự bắt buộc — Oracle coi chuỗi rỗng `''` là `NULL`, đặt `NOT NULL` dễ vỡ khi service ghi giá trị rỗng hợp lệ.
-- Cột tự tăng khai khác nhau theo engine — xem `V1__init.sql`/`V2__example_entities.sql` có sẵn trong từng thư mục làm mẫu: SQLite `AUTOINCREMENT`, Postgres `GENERATED ALWAYS AS IDENTITY`, MySQL `AUTO_INCREMENT`, SQL Server `IDENTITY(1,1)`, Oracle `GENERATED BY DEFAULT AS IDENTITY` (chú ý **`BY DEFAULT`, không phải `ALWAYS`** — Oracle insert xong mới `SELECT MAX(id)` lấy id, không insert-trả-id trong 1 câu lệnh như 4 engine kia).
-
-## 7. Build & chạy
+## 8. Build & chạy
 
 ```bash
-cd api-service
-./gradlew :api:bootRun          # chạy app (cwd = api-service/, xem mục 2)
-./gradlew test                   # chạy test (useJUnitPlatform() đã bật ở base + api)
+cd quiz-service
+./gradlew :api:bootRun          # chạy app (cwd = quiz-service/)
+./gradlew test                   # useJUnitPlatform() đã bật sẵn ở base + api
 ./gradlew :base:compileJava      # build riêng base khi chỉ sửa base
 ```
 
-Swagger UI: `/api.html` (đường dẫn cấu hình ở `springdoc.swagger-ui.path`).
+Swagger UI: `/api.html`.
 
-## 8. Cạm bẫy đã gặp — đọc trước khi debug
+## 9. Cạm bẫy đã gặp khi làm `api-service`/`base` (áp dụng nguyên cho `quiz-service`, cùng stack)
 
-- **`base/application.yaml` gần như không dùng.** `base` và `api` đều có file `application.yaml` trùng tên trên classpath — Spring **không gộp** (merge) 2 file, chỉ 1 file thắng, và thực tế `api/src/main/resources/application.yaml` luôn thắng. Cần đổi cấu hình chung thì sửa ở `api/application.yaml`, không phải `base/`.
-- **`base/src/main/resources/logback-spring.xml` có sẵn** → khi có file `logback-spring.xml`/`logback.xml` riêng, Spring Boot **bỏ qua hoàn toàn** `logging.pattern.console/file` khai trong `application.yaml`. Muốn đổi pattern log, sửa `logback-spring.xml`, không sửa yaml.
-- **Property cấu hình đa hệ CSDL phải lồng đúng cấp theo engine** — ví dụ `base.database.postgresql.host`, không phải `base.database.host`. Spring không báo lỗi gì nếu đặt sai cấp, chỉ âm thầm không bind được, provider dùng giá trị mặc định trong code. Khi nghi ngờ 1 khối yaml sai vị trí, đối chiếu lại đúng field `@Value`/`@ConfigurationProperties` trong provider Java tương ứng ở `base/db/`.
-- **Spring Boot 4 đổi package của một số autoconfig quen thuộc** — nếu gặp lỗi "package does not exist" ở 1 annotation từng quen (`@AutoConfigureMockMvc`, `WebMvcAutoConfiguration`, `DataSourceProperties`...), khả năng cao package đã đổi ở Boot 4 (`org.springframework.boot.webmvc.*`, `org.springframework.boot.jdbc.autoconfigure.*`...) — tra lại docs.spring.io theo đúng version thay vì đoán theo kiến thức cũ.
-- **Jackson 3**: package đổi từ `com.fasterxml.jackson.*` sang `tools.jackson.*` (trừ `jackson-annotations`); `JacksonException` giờ là unchecked exception, không còn kế thừa `IOException`.
-- **`useJUnitPlatform()` không tự động bật** chỉ vì có `junit-platform-launcher` trên classpath — phải khai rõ `tasks.named('test') { useJUnitPlatform() }` trong `build.gradle` (đã bật ở `base` và `api`).
-- **Oracle**: `InsertExecutor` không lấy được id vừa insert trong 1 lượt gọi như 4 engine kia — phải `INSERT` rồi `SELECT MAX(id)` riêng, không an toàn tuyệt đối nếu nhiều request insert đồng thời vào cùng 1 bảng (bảng ít ghi đồng thời thì ổn — cấu hình, danh mục...).
-- **`.idea/gradle.xml`**: lỗi Gradle "No cached version ... available for offline mode" khi thêm dependency mới không hẳn do khai sai — kiểm tra `offlineMode` trong `.idea/gradle.xml` trước (cài đặt riêng của IntelliJ, không phải setting Gradle chuẩn).
-- **Module Gradle `:api` vs package Java `example`**: từ đợt đổi tên này, tên module (`api`) và tên package nghiệp vụ bên trong (`app.example`) không còn khớp nhau nữa — khi đọc/tìm code, nhớ package vẫn là `vn.org.thn.service.app.example.*`, không phải `app.api.*`.
+- `base/application.yaml` gần như không dùng — 2 file `application.yaml` trùng tên trên classpath, Spring không gộp, file của module `api` luôn thắng.
+- `base/logback-spring.xml` có sẵn → `logging.pattern.*` trong `application.yaml` bị bỏ qua hoàn toàn, sửa log pattern phải sửa file XML.
+- Property đa hệ CSDL phải lồng đúng cấp theo engine (`base.database.postgresql.host`, không phải `base.database.host`) — sai cấp không báo lỗi, chỉ âm thầm dùng default.
+- Spring Boot 4 đổi package 1 số autoconfig quen thuộc (`@AutoConfigureMockMvc`, `WebMvcAutoConfiguration`, `DataSourceProperties` → namespace mới) — gặp lỗi "package does not exist" thì tra lại docs.spring.io theo đúng version.
+- Jackson 3: `com.fasterxml.jackson.*` → `tools.jackson.*` (trừ `jackson-annotations`).
+- `useJUnitPlatform()` phải khai rõ trong `build.gradle`, không tự bật.
+- Oracle: `InsertExecutor` phải `INSERT` rồi `SELECT MAX(id)` riêng để lấy id — không an toàn tuyệt đối khi insert đồng thời cao.
+- `.idea/gradle.xml` `offlineMode` có thể gây lỗi "No cached version" khi thêm dependency mới dù khai đúng cú pháp.
 
-## 9. Tài liệu liên quan
+## 10. Tài liệu liên quan
 
-- `../base/README.md` — API đầy đủ của thư viện `base` (ORM/query DSL, entity/repository, error handling, đa hệ CSDL, i18n, Javadoc coverage).
+- `docs/` — chức năng/task cần code, đọc trước README này.
+- `../base/README.md` — API đầy đủ của `base`.
+- `../api-service/README.md` — README gốc trước khi clone, tham khảo nếu cần đối chiếu quy ước chung (không phải nguồn quyết định cho `quiz-service`).

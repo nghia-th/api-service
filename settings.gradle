@@ -1,3 +1,3 @@
-rootProject.name = 'api-service'
+rootProject.name = 'quiz-service'
 include("api",":base")
 project(":base").projectDir = file("../base")
