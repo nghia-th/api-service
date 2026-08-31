@@ -12,15 +12,18 @@ import vn.org.thn.service.base.exception.ErrorCode;
  * deliberately reuses {@code CommonErrorCode.FORBIDDEN} instead of adding a quiz-specific code -
  * "forbidden" is a generic concept, not specific to this service.
  * <p>
- * {@code USERNAME_TAKEN} is not used yet by task 1 (there is no student self-register) - it is
- * added now per the task 1 spec, for task 2's "create student" endpoint to reuse.
+ * {@code USERNAME_TAKEN} was added in task 1, for task 2's "create student" endpoint to reuse.
+ * {@code LESSON_HAS_QUESTIONS} is not used yet (task 4, once {@code Question} exists) - added now
+ * next to {@code SUBJECT_HAS_LESSONS} so both "still has children" errors are defined together.
  */
 public enum QuizErrorCode implements ErrorCode {
 
     UNAUTHORIZED("QUIZ_001", "Unauthorized", HttpStatus.UNAUTHORIZED),
     EMAIL_TAKEN("QUIZ_002", "Email already registered", HttpStatus.CONFLICT),
     USERNAME_TAKEN("QUIZ_003", "Username already taken", HttpStatus.CONFLICT),
-    INVALID_CREDENTIALS("QUIZ_004", "Invalid email/username or password", HttpStatus.UNAUTHORIZED);
+    INVALID_CREDENTIALS("QUIZ_004", "Invalid email/username or password", HttpStatus.UNAUTHORIZED),
+    SUBJECT_HAS_LESSONS("QUIZ_005", "Subject still has lessons - delete its lessons first", HttpStatus.CONFLICT),
+    LESSON_HAS_QUESTIONS("QUIZ_006", "Lesson still has questions - delete its questions first", HttpStatus.CONFLICT);
 
     private final String code;
     private final String message;
