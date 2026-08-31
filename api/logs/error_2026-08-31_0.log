@@ -1,2 +1,0 @@
-2026-08-31 23:13:52.186 [example] ERROR [] o.f.c.i.s.f.FileSystemScanner - Skipping filesystem location: /Volumes/Data/04.MyProject/java-project/quiz-service/api/database/postgresql (not found)
-2026-08-31 23:13:52.310 [example] ERROR [] o.f.core.internal.command.DbMigrate - Schema "public" has version 2, but no migration could be resolved in the configured locations !
