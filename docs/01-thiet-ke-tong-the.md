@@ -149,6 +149,7 @@ Attempt 1───N AttemptAnswer ── Question, Choice
 - Response: dùng `ApiResponse<T>` chuẩn của `base` (`ok(...)`/`fail(...)` qua `BaseCtl`) — không tự chế response format riêng.
 - Danh sách có phân trang: dùng `PageRequest`/`PageResponse` có sẵn trong `base`.
 - Lỗi nghiệp vụ: `BusinessException` với `ErrorCode` riêng cho `quiz` (enum mới implements `ErrorCode`, tách khỏi `CommonErrorCode` — theo đúng quy ước `api-service/README.md` mục 4).
+- Upload file (import câu hỏi Excel/CSV — xem `dev/04-ngan-hang-cau-hoi.md`): dùng `multipart/form-data` chuẩn Spring MVC, không tự chế cơ chế upload riêng. Đọc file bằng thư viện đọc có cấu trúc chuẩn (Apache POI cho `.xlsx`, Apache Commons CSV cho `.csv`) — cần thêm dependency mới vào `api/build.gradle`, `base` hiện chưa có sẵn 2 thư viện này.
 
 ## 5. Tài liệu chi tiết theo chức năng
 

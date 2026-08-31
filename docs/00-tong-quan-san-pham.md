@@ -15,7 +15,7 @@ Phụ huynh muốn biết con có thực sự hiểu bài vừa học trong sác
 
 ## 2. Đối tượng sử dụng
 
-**Phụ huynh (Parent)** — tài khoản chính, tự đăng ký. Có thể: quản lý hồ sơ con (tạo tài khoản, set Lớp), tạo Môn học/Bài học, tạo ngân hàng câu hỏi trắc nghiệm, tạo và giao bài kiểm tra cho con, xem kết quả và lịch sử kiểm tra.
+**Phụ huynh (Parent)** — tài khoản chính, tự đăng ký. Có thể: quản lý hồ sơ con (tạo tài khoản, set Lớp), tạo Môn học/Bài học, tạo ngân hàng câu hỏi trắc nghiệm (tự nhập tay hoặc import từ file Excel/CSV theo mẫu), tạo và giao bài kiểm tra cho con, xem kết quả và lịch sử kiểm tra.
 
 **Học sinh (Student)** — tài khoản do phụ huynh tạo và quản lý (không tự đăng ký), đăng nhập bằng username/password do phụ huynh đặt. Có thể: xem bài được giao, làm bài, nộp bài, xem kết quả (điểm, câu đúng/sai) sau khi nộp.
 
@@ -23,13 +23,13 @@ Phụ huynh muốn biết con có thực sự hiểu bài vừa học trong sác
 
 **Trong phạm vi:**
 - 1 loại câu hỏi duy nhất: trắc nghiệm (nhiều lựa chọn, 1 đáp án đúng).
-- Phụ huynh tự nhập tay câu hỏi, gắn với Môn học + Bài học tự đặt tên (không cần danh mục chuẩn hoá sẵn).
+- Phụ huynh tạo câu hỏi bằng 2 cách: **tự nhập tay** từng câu, hoặc **import file Excel/CSV theo mẫu cột cố định** (tải mẫu về, điền, upload lại — bổ sung 2026-08-31, xem `dev/04-ngan-hang-cau-hoi.md`) — cả 2 đều gắn câu hỏi với Môn học + Bài học tự đặt tên (không cần danh mục chuẩn hoá sẵn).
 - Mỗi câu hỏi có thể gắn 1 tag nhóm kiến thức tự do (ví dụ "Do/Does", "Câu phủ định") — dùng để phân tích kết quả theo mảng kiến thức, không phải hệ phân loại chuẩn hoá.
 - Hệ thống tự chấm điểm, phụ huynh xem kết quả tổng điểm + breakdown theo tag nhóm kiến thức.
 - Phụ huynh quản lý nhiều hồ sơ con, mỗi con có tài khoản riêng (username/password do phụ huynh đặt) và field Lớp.
 
 **Ngoài phạm vi (để giai đoạn sau):**
-- Import câu hỏi qua OCR/chụp ảnh, import file (Word/PDF/Excel).
+- Import câu hỏi qua OCR/chụp ảnh, hoặc trích xuất từ file Word/PDF viết tự do (khác với import Excel/CSV có cấu trúc cột cố định — cái đó **đã** đưa vào MVP v1, xem trên).
 - Dạng câu hỏi Đúng/Sai và Điền đáp án ngắn.
 - Ngân hàng câu hỏi có sẵn theo Lớp → Môn → Chủ đề → Bài học (soạn sẵn trong hệ thống).
 - Taxonomy/chuẩn hoá nhóm kiến thức (v1 chỉ là tag tự do).
@@ -44,7 +44,7 @@ Tạo hồ sơ con (username/password + Lớp)
         ↓
 Tạo Môn học → Bài học
         ↓
-Tạo câu hỏi trắc nghiệm (gắn Bài học, tuỳ chọn gắn tag nhóm kiến thức)
+Tạo câu hỏi trắc nghiệm — nhập tay TỪNG CÂU, hoặc import file Excel/CSV theo mẫu (nhiều câu 1 lần)
         ↓
 Tạo Bài kiểm tra (chọn câu hỏi, giao cho 1 con)
         ↓
