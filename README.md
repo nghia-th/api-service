@@ -42,12 +42,16 @@ project(":base").projectDir = file("../base")
 
 ## 3. Việc dọn dẹp cần làm đầu tiên (trước khi viết entity thật)
 
-Repo hiện vẫn còn nguyên cruft kế thừa từ `api-service`:
+**Đã làm (2026-08-31):**
 
-- 4 entity demo `Category`/`StockLevel`/`Tag`/`Article` (cả 4 layer: entity/repository/service/api/dto) trong `api/src/main/java/vn/org/thn/service/app/example/`.
-- Package nghiệp vụ vẫn tên `example` — **cần đổi thành `quiz`** (`vn.org.thn.service.app.quiz.*`), đã chốt trong `docs/01-thiet-ke-tong-the.md`.
-- Migration `database/*/V1__init.sql` + `V2__example_entities.sql` (bảng `translate`/demo, không liên quan `quiz-service`) — bắt đầu lại từ `V1__` mới cho các bảng thật.
-- `application.yaml` (`api/src/main/resources/`) vẫn còn nguyên giá trị demo: `spring.application.name: example`, `db-name: example_db`, `dbPrefix: dev` → cần đổi tên database cho đúng sản phẩm trước khi chạy thật.
+- ✅ Xoá 4 entity demo `Category`/`StockLevel`/`Tag`/`Article` (cả 4 layer: entity/repository/service/api/dto), toàn bộ `api/src/main/java/vn/org/thn/service/app/example/` đã xoá sạch. Package `vn.org.thn.service.app.quiz.*` đã có sẵn (rỗng), đây là nơi viết entity thật (Task 1 trở đi) — không có gì để "đổi tên" nữa vì entity demo bị xoá thẳng thay vì rename.
+- ✅ Xoá migration `database/<engine>/V2__example_entities.sql` (5 engine).
+- ✅ `application.yaml` (`api/src/main/resources/`): `spring.application.name` → `quiz-service`, `db-name` → `quiz_db` (giữ nguyên `dbPrefix: dev` — đây là prefix môi trường bình thường, không phải giá trị demo → DB thật sẽ là `dev_quiz_db`).
+
+**Còn lại (chưa làm, để nguyên theo yêu cầu):**
+
+- `git remote` vẫn trỏ về `api-service.git` — cần đổi sang repo riêng trước khi push.
+- `database/*/V1__init.sql` hiện tại (bảng `translate`/demo kế thừa từ `api-service`) chưa đụng tới — sẽ xử lý khi bắt đầu viết migration cho entity thật (Task 1 trở đi), không thuộc phạm vi dọn dẹp lần này.
 
 Xem chi tiết ở `docs/dev/00-quy-uoc-chung.md`.
 

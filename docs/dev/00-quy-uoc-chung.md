@@ -21,7 +21,7 @@ api/src/main/java/vn/org/thn/service/app/
     └── exception/    QuizErrorCode.java — enum implements ErrorCode, mã lỗi riêng quiz-service
 ```
 
-**Việc đầu tiên khi bắt đầu code (trước khi viết entity thật):** xoá 4 entity demo `Category`/`StockLevel`/`Tag`/`Article` (cả 4 layer: entity/repository/service/api/dto) và migration `V2__example_entities.sql` liên quan (5 engine) — đây là cruft kế thừa từ lúc clone `api-service`, không thuộc `quiz-service`.
+**Việc đầu tiên khi bắt đầu code (trước khi viết entity thật) — ĐÃ LÀM (2026-08-31):** đã xoá 4 entity demo `Category`/`StockLevel`/`Tag`/`Article` (cả 4 layer: entity/repository/service/api/dto), migration `V2__example_entities.sql` liên quan (5 engine), và sửa `application.yaml` (`spring.application.name` → `quiz-service`, `db-name` → `quiz_db`). Package `example` đã xoá sạch, package `quiz` rỗng sẵn sàng cho entity thật. Còn lại chưa làm: `git remote` vẫn trỏ `api-service.git`, `V1__init.sql` (bảng translate/demo) chưa dọn — để xử lý sau, không thuộc phạm vi dọn dẹp lần này.
 
 **Danh sách entity đầy đủ:** xem `../01-thiet-ke-tong-the.md` mục 2 — 10 entity: `Parent`, `Student`, `Subject`, `Lesson`, `Question`, `Choice`, `Test`, `TestQuestion`, `Attempt`, `AttemptAnswer`.
 
