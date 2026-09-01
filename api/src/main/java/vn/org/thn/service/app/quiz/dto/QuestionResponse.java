@@ -6,6 +6,15 @@ import vn.org.thn.service.app.quiz.entity.Question;
 
 import java.util.List;
 
+/**
+ * {@code hasAudio} is derived from {@link Question#getAudioPath()} being non-null rather than
+ * exposing the raw storage path/filename to clients - the actual bytes are fetched separately via
+ * {@code GET /api/parent/questions/{id}/audio}, same pattern {@link LessonResponse#isHasImage()}
+ * already uses for a Lesson's illustrative image. {@code hideContentInTest} is passed through as-
+ * is here (Parent-facing view - the Parent is always allowed to see their own setting); compare
+ * {@link vn.org.thn.service.app.quiz.dto.StudentQuestionResponse}, which enforces the hiding
+ * itself instead of merely exposing the flag.
+ */
 @Data
 public class QuestionResponse {
     private Long id;
@@ -13,6 +22,8 @@ public class QuestionResponse {
     private String content;
     private String knowledgeTag;
     private List<ChoiceResponse> choices;
+    private boolean hasAudio;
+    private boolean hideContentInTest;
 
     public static QuestionResponse from(Question question, List<Choice> choices) {
         QuestionResponse response = new QuestionResponse();
@@ -21,6 +32,8 @@ public class QuestionResponse {
         response.content = question.getContent();
         response.knowledgeTag = question.getKnowledgeTag();
         response.choices = choices.stream().map(ChoiceResponse::from).toList();
+        response.hasAudio = question.getAudioPath() != null;
+        response.hideContentInTest = Boolean.TRUE.equals(question.getHideContentInTest());
         return response;
     }
 }

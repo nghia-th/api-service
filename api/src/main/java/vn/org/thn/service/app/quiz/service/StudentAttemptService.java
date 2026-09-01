@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.org.thn.service.app.quiz.dto.AnswerItem;
 import vn.org.thn.service.app.quiz.dto.AnswerRequest;
+import vn.org.thn.service.app.quiz.dto.QuestionAudio;
 import vn.org.thn.service.app.quiz.dto.StartAttemptResponse;
 import vn.org.thn.service.app.quiz.dto.StudentPracticeGenerateRequest;
 import vn.org.thn.service.app.quiz.dto.StudentQuestionResponse;
@@ -88,6 +89,9 @@ public class StudentAttemptService extends IBase {
     @Autowired
     private TestService testService;
 
+    @Autowired
+    private QuestionService questionService;
+
     /** Every Test assigned to the current Student, with status so they know what is done vs. pending. */
     public List<StudentTestSummaryResponse> listTests() {
         Long studentId = CurrentUser.get().userId();
@@ -110,6 +114,35 @@ public class StudentAttemptService extends IBase {
     public TestResponse generatePractice(StudentPracticeGenerateRequest request) {
         Long studentId = CurrentUser.get().userId();
         return testService.generatePracticeForStudent(studentId, request.getSubjectId(), request.getName(), request.getQuestionCount());
+    }
+
+    /**
+     * Student-facing audio playback for a listening question (task "Cau hoi dang am thanh",
+     * 2026-09-01) - {@code GET /api/student/questions/{id}/audio}. Access is per-question, not
+     * blanket: only reachable if some Test assigned to the current Student has a {@code
+     * TestQuestion} pointing at this questionId - a direct, 1-hop version of {@code
+     * StudentLessonService#assertAccessible}'s multi-hop check (no {@code Lesson} involved here,
+     * {@code Question} is already directly on {@code TestQuestion}). Reuses {@link
+     * QuestionService#getById}/{@link QuestionService#loadAudio} (both package-private, same reuse
+     * shape {@code StudentLessonService} already uses on {@code LessonService}) rather than
+     * duplicating file-reading logic here.
+     */
+    public QuestionAudio getQuestionAudio(Long questionId) {
+        Long studentId = CurrentUser.get().userId();
+        // Throws NOT_FOUND itself if the question does not exist at all - checked before the
+        // access check below so a bad id never leaks a FORBIDDEN vs NOT_FOUND distinction either
+        // way (same shape as every other getOwnedOrThrow-style lookup in this codebase).
+        Question question = questionService.getById(questionId);
+
+        List<Long> testIds = testQuestionRepository.query().eq(TestQuestion::getQuestionId, questionId).list()
+                .stream().map(TestQuestion::getTestId).distinct().toList();
+        boolean accessible = !testIds.isEmpty()
+                && testRepository.query().in(Test::getId, testIds).eq(Test::getStudentId, studentId).exists();
+        if (!accessible) {
+            throw new BusinessException(CommonErrorCode.FORBIDDEN, "Question audio is not accessible");
+        }
+
+        return questionService.loadAudio(question);
     }
 
     @Transactional

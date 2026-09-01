@@ -18,6 +18,23 @@ import vn.org.thn.service.base.entity.BaseEntity;
  * <p>
  * {@code knowledgeTag} is optional free text (no fixed enum in v1) - see {@code
  * docs/dev/07-ket-qua-bao-cao.md} for how it is used later to group results.
+ * <p>
+ * {@code audioPath}/{@code hideContentInTest} were added for the "listening question" feature
+ * (task "Cau hoi dang am thanh", 2026-09-01) so a Question can optionally carry an audio clip a
+ * Student listens to instead of (or in addition to) reading {@code content} - e.g. an English
+ * listening-comprehension item. This is a per-question OPTIONAL attachment on the existing
+ * Question, not a separate "question type" (decided via AskUserQuestion before implementing, same
+ * "keep it simple, reuse the existing shape" choice already made for {@code Lesson.imagePath}) -
+ * every Question still always has a required {@code content} text (Parent-facing management/
+ * report label), audio is purely additive. {@code audioPath} stores only the server-side relative
+ * filename of the uploaded audio (never the raw bytes) - see {@code
+ * QuestionService#uploadAudio}/{@code #loadAudio} for how the file itself is stored on disk, same
+ * pattern as {@code Lesson#imagePath}. {@code hideContentInTest} is the Parent's own per-question
+ * choice (AskUserQuestion answer: "phu huynh duoc phep cho hien content hay khong") of whether the
+ * Student-facing take-test screen shows {@code content} as text or hides it so the Student must
+ * rely on the audio alone (a real "listening test" UX) - enforced server-side in {@code
+ * StudentQuestionResponse#from} (never trust the client to hide it), and has no effect at all when
+ * {@code audioPath} is null (no audio = content always shown, regardless of this flag).
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -33,4 +50,10 @@ public class Question extends BaseEntity {
     private Long lessonId;
     private String content;
     private String knowledgeTag;
+
+    /** Duong dan tuong doi/ten file audio da luu tren server, null neu cau hoi nay chua co audio. */
+    private String audioPath;
+
+    /** true = an "content" khoi man hinh lam bai cua Hoc sinh khi cau hoi co audio (bat buoc nghe moi biet). Khong co tac dung neu audioPath null. Mac dinh false/null (hien content nhu cu). */
+    private Boolean hideContentInTest;
 }

@@ -19,7 +19,10 @@ import vn.org.thn.service.base.exception.ErrorCode;
  * javadoc). Do not confuse it with {@code QUESTION_USED_IN_TEST} (QUIZ_008), which is a
  * different rule guarding Question's own delete endpoint instead. {@code QUESTION_HAS_ATTEMPTS}
  * (QUIZ_019) is a THIRD, separate rule again, guarding Question's own UPDATE endpoint - see
- * {@code QuestionService#update}'s javadoc.
+ * {@code QuestionService#update}'s javadoc. {@code QUESTION_AUDIO_INVALID_TYPE}/{@code
+ * QUESTION_AUDIO_TOO_LARGE} (QUIZ_020/QUIZ_021) guard {@code QuestionService#uploadAudio}, same
+ * shape as {@code LESSON_IMAGE_INVALID_TYPE}/{@code LESSON_IMAGE_TOO_LARGE} (QUIZ_016/QUIZ_017)
+ * for Lesson's illustrative image.
  */
 public enum QuizErrorCode implements ErrorCode {
 
@@ -41,7 +44,9 @@ public enum QuizErrorCode implements ErrorCode {
     LESSON_IMAGE_INVALID_TYPE("QUIZ_016", "Lesson image must be a JPEG, PNG or WebP file", HttpStatus.BAD_REQUEST),
     LESSON_IMAGE_TOO_LARGE("QUIZ_017", "Lesson image must be 5MB or smaller", HttpStatus.BAD_REQUEST),
     SUBJECT_NO_QUESTIONS("QUIZ_018", "This subject has no questions yet - add questions before generating a practice test", HttpStatus.BAD_REQUEST),
-    QUESTION_HAS_ATTEMPTS("QUIZ_019", "This question has already been answered in a test attempt - it can no longer be edited", HttpStatus.CONFLICT);
+    QUESTION_HAS_ATTEMPTS("QUIZ_019", "This question has already been answered in a test attempt - it can no longer be edited", HttpStatus.CONFLICT),
+    QUESTION_AUDIO_INVALID_TYPE("QUIZ_020", "Question audio must be an MP3, M4A, WAV or OGG file", HttpStatus.BAD_REQUEST),
+    QUESTION_AUDIO_TOO_LARGE("QUIZ_021", "Question audio must be 10MB or smaller", HttpStatus.BAD_REQUEST);
 
     private final String code;
     private final String message;

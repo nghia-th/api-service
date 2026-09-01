@@ -6,6 +6,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import vn.org.thn.service.app.quiz.dto.AnswerRequest;
+import vn.org.thn.service.app.quiz.dto.QuestionAudio;
 import vn.org.thn.service.app.quiz.dto.StartAttemptResponse;
 import vn.org.thn.service.app.quiz.dto.StudentPracticeGenerateRequest;
 import vn.org.thn.service.app.quiz.dto.StudentTestSummaryResponse;
@@ -78,6 +81,24 @@ public class StudentAttemptApi extends BaseCtl {
     @PostMapping("/tests/practice")
     public ResponseEntity<ApiResponse<TestResponse>> generatePractice(@Valid @RequestBody StudentPracticeGenerateRequest request) {
         return ok(studentAttemptService.generatePractice(request));
+    }
+
+    @Operation(
+            summary = "Download a question's audio clip",
+            description = "Listening-question feature (task \"Cau hoi dang am thanh\", 2026-09-01). Only reachable if some test assigned to the current student has this question on it (works both while taking the test and after submitting, same as the lesson content/image endpoints)."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the audio file (Content-Type set from its stored type)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This question is not reachable from any test assigned to the current student - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No question with this id, or it has no audio - COMMON_005 NOT_FOUND")
+    })
+    @GetMapping("/questions/{id}/audio")
+    public ResponseEntity<byte[]> questionAudio(@Parameter(description = "Question id") @PathVariable Long id) {
+        QuestionAudio audio = studentAttemptService.getQuestionAudio(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(audio.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + audio.filename() + "\"")
+                .body(audio.content());
     }
 
     @Operation(

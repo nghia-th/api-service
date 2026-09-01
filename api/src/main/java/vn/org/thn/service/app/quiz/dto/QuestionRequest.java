@@ -19,6 +19,12 @@ import java.util.List;
  * rule cannot be expressed as a single-field Bean Validation constraint (it depends on every
  * element together), so it is checked in {@code QuestionService} instead - see {@code
  * QuizErrorCode#QUESTION_MUST_HAVE_ONE_CORRECT_CHOICE}.
+ * <p>
+ * {@code hideContentInTest} was added 2026-09-01 for the "listening question" feature - it goes
+ * through this same create/update request (set together with {@code content}/{@code
+ * knowledgeTag}/choices) unlike the audio FILE itself, which is a separate upload endpoint (same
+ * "text fields here, file via its own endpoint" split {@code Lesson} already uses for its
+ * illustrative image).
  */
 @Data
 public class QuestionRequest {
@@ -39,4 +45,7 @@ public class QuestionRequest {
     @Valid
     @Schema(description = "The question's choices - at least 2, with exactly one marked correct")
     private List<ChoiceRequest> choices;
+
+    @Schema(type = "boolean", example = "false", description = "When this question has an audio clip (task \"Cau hoi dang am thanh\", 2026-09-01): true hides 'content' from the Student's take-test screen so they must rely on the audio alone. No effect when the question has no audio yet. Optional - null/omitted means false (content always shown), same as every existing question before this field existed.")
+    private Boolean hideContentInTest;
 }

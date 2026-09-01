@@ -3,7 +3,9 @@ package vn.org.thn.service.app.quiz.service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.ChoiceRequest;
+import vn.org.thn.service.app.quiz.dto.QuestionAudio;
 import vn.org.thn.service.app.quiz.dto.QuestionRequest;
 import vn.org.thn.service.app.quiz.dto.QuestionResponse;
 import vn.org.thn.service.app.quiz.entity.AttemptAnswer;
@@ -17,12 +19,18 @@ import vn.org.thn.service.app.quiz.repository.QuestionRepository;
 import vn.org.thn.service.app.quiz.repository.TestQuestionRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.base.IBase;
+import vn.org.thn.service.base.db.DatabasePath;
 import vn.org.thn.service.base.exception.BusinessException;
 import vn.org.thn.service.base.exception.CommonErrorCode;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * Question/Choice CRUD for the currently logged-in Parent (task 4), by hand via this class - the
@@ -60,6 +68,20 @@ import java.util.List;
 @Service
 public class QuestionService extends IBase {
 
+    /** 10 MB app-level cap for a question's audio clip - same "deliberately smaller than Spring's own max-file-size" reasoning as {@code LessonService#MAX_IMAGE_SIZE_BYTES}, sized up from that 5MB image cap since a short listening-question audio clip runs larger than a photo. */
+    private static final long MAX_AUDIO_SIZE_BYTES = 10L * 1024 * 1024;
+
+    private static final Map<String, String> ALLOWED_AUDIO_TYPES = Map.of(
+            "audio/mpeg", "mp3",
+            "audio/mp4", "m4a",
+            "audio/wav", "wav",
+            "audio/x-wav", "wav",
+            "audio/ogg", "ogg"
+    );
+
+    /** Same folder-per-upload-kind layout as {@code LessonService#IMAGE_DIR} - see that field's javadoc for why this lives outside {@link DatabasePath}. */
+    private static final Path AUDIO_DIR = DatabasePath.HOME.resolve("uploads").resolve("questions");
+
     @Autowired
     private QuestionRepository questionRepository;
 
@@ -81,8 +103,8 @@ public class QuestionService extends IBase {
         lessonService.getOwnedOrThrow(request.getLessonId(), parentId);
         validateExactlyOneCorrectChoice(request.getChoices());
 
-        Question question = questionRepository.save(
-                newQuestion(parentId, request.getLessonId(), request.getContent(), request.getKnowledgeTag()));
+        Question question = questionRepository.save(newQuestion(parentId, request.getLessonId(),
+                request.getContent(), request.getKnowledgeTag(), request.getHideContentInTest()));
         List<Choice> choices = saveChoices(question.getId(), request.getChoices());
 
         logInfo("Question created: id={}, lessonId={}, parentId={}", question.getId(), question.getLessonId(), parentId);
@@ -100,6 +122,7 @@ public class QuestionService extends IBase {
         question.setLessonId(request.getLessonId());
         question.setContent(request.getContent());
         question.setKnowledgeTag(request.getKnowledgeTag());
+        question.setHideContentInTest(Boolean.TRUE.equals(request.getHideContentInTest()));
         question.setUpdatedAt(LocalDateTime.now());
         question.setUpdatedBy("parent:" + parentId);
         question = questionRepository.save(question);
@@ -138,8 +161,128 @@ public class QuestionService extends IBase {
             throw new BusinessException(QuizErrorCode.QUESTION_USED_IN_TEST);
         }
         choiceRepository.delete().eq(Choice::getQuestionId, id).execute();
+        deleteAudioFileQuietly(question.getAudioPath());
         questionRepository.deleteById(question.getId());
         logInfo("Question deleted: id={}, parentId={}", question.getId(), parentId);
+    }
+
+    /**
+     * Validates and stores a new audio clip for the question, replacing any previous one - same
+     * shape as {@code LessonService#uploadImage} (content-type checked against {@link
+     * #ALLOWED_AUDIO_TYPES}, never the client-supplied filename/extension; size checked against
+     * {@link #MAX_AUDIO_SIZE_BYTES}; server-generated filename, sidestepping path traversal and any
+     * client-controlled extension). Blocked by {@link #ensureNotYetAttempted} first, same as {@link
+     * #update} - see the class javadoc's "BUG FIX 2026-09-01" note: replacing a Question's audio
+     * after a Student has already answered it would make that Student's "xem lai bai hoc"/report
+     * review play back different audio than what they actually heard, the exact same integrity
+     * problem {@code QUESTION_HAS_ATTEMPTS} already exists to prevent for {@code content}/choices.
+     */
+    public QuestionResponse uploadAudio(Long id, MultipartFile file) {
+        Long parentId = CurrentUser.get().userId();
+        Question question = getOwnedOrThrow(id, parentId);
+        ensureNotYetAttempted(id);
+
+        String extension = ALLOWED_AUDIO_TYPES.get(file.getContentType());
+        if (extension == null) {
+            throw new BusinessException(QuizErrorCode.QUESTION_AUDIO_INVALID_TYPE);
+        }
+        if (file.getSize() > MAX_AUDIO_SIZE_BYTES) {
+            throw new BusinessException(QuizErrorCode.QUESTION_AUDIO_TOO_LARGE);
+        }
+
+        try {
+            Files.createDirectories(AUDIO_DIR);
+        } catch (IOException e) {
+            logError("Could not create question audio directory " + AUDIO_DIR, e);
+            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
+        }
+
+        String oldAudioPath = question.getAudioPath();
+        String filename = "question-" + id + "-" + UUID.randomUUID() + "." + extension;
+        Path target = AUDIO_DIR.resolve(filename);
+        try {
+            file.transferTo(target);
+        } catch (IOException e) {
+            logError("Could not save question audio to " + target, e);
+            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
+        }
+
+        question.setAudioPath(filename);
+        question.setUpdatedAt(LocalDateTime.now());
+        question.setUpdatedBy("parent:" + parentId);
+        question = questionRepository.save(question);
+
+        // Only removed AFTER the new file is safely written+saved, same "never leave a dangling
+        // reference on a mid-upload failure" reasoning as LessonService#uploadImage.
+        deleteAudioFileQuietly(oldAudioPath);
+
+        logInfo("Question audio uploaded: id={}, parentId={}, filename={}", id, parentId, filename);
+        return QuestionResponse.from(question, choicesOf(id));
+    }
+
+    /** Only the owning Parent can view it. Throws {@code COMMON_005 NOT_FOUND} if the question has no audio yet. */
+    public QuestionAudio getAudioOwned(Long id, Long parentId) {
+        Question question = getOwnedOrThrow(id, parentId);
+        return loadAudio(question);
+    }
+
+    /** Same {@link #ensureNotYetAttempted} guard as {@link #uploadAudio} - see that method's javadoc. */
+    public QuestionResponse deleteAudio(Long id) {
+        Long parentId = CurrentUser.get().userId();
+        Question question = getOwnedOrThrow(id, parentId);
+        ensureNotYetAttempted(id);
+
+        deleteAudioFileQuietly(question.getAudioPath());
+        question.setAudioPath(null);
+        question.setUpdatedAt(LocalDateTime.now());
+        question.setUpdatedBy("parent:" + parentId);
+        question = questionRepository.save(question);
+
+        logInfo("Question audio deleted: id={}, parentId={}", id, parentId);
+        return QuestionResponse.from(question, choicesOf(id));
+    }
+
+    /**
+     * Reads the question's audio bytes off disk. Package-private + takes the already-resolved
+     * {@link Question} (no ownership check of its own) so {@code StudentAttemptService} can reuse
+     * it once it has independently proven, via its own {@code TestQuestion}-based check, that the
+     * current Student may hear this Question's audio - same reuse shape as {@code
+     * LessonService#loadImage}/{@code StudentLessonService}.
+     */
+    QuestionAudio loadAudio(Question question) {
+        if (question.getAudioPath() == null) {
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Question has no audio");
+        }
+        Path path = AUDIO_DIR.resolve(question.getAudioPath());
+        byte[] bytes;
+        try {
+            bytes = Files.readAllBytes(path);
+        } catch (IOException e) {
+            logError("Question audio file missing on disk: " + path, e);
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Question audio file not found");
+        }
+        return new QuestionAudio(bytes, contentTypeForAudioFilename(question.getAudioPath()), question.getAudioPath());
+    }
+
+    private String contentTypeForAudioFilename(String filename) {
+        String ext = filename.substring(filename.lastIndexOf('.') + 1).toLowerCase();
+        return ALLOWED_AUDIO_TYPES.entrySet().stream()
+                .filter(entry -> entry.getValue().equals(ext))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse("application/octet-stream");
+    }
+
+    /** Best-effort delete - a missing/already-gone file is not an error worth failing the caller's request over. */
+    private void deleteAudioFileQuietly(String audioPath) {
+        if (audioPath == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(AUDIO_DIR.resolve(audioPath));
+        } catch (IOException e) {
+            log().warn("Could not delete old question audio file {}: {}", audioPath, e.getMessage());
+        }
     }
 
     /**
@@ -157,18 +300,24 @@ public class QuestionService extends IBase {
      */
     @Transactional
     Question createFromImportRow(Long lessonId, Long parentId, String content, String knowledgeTag, List<ChoiceRequest> choices) {
-        Question question = questionRepository.save(newQuestion(parentId, lessonId, content, knowledgeTag));
+        Question question = questionRepository.save(newQuestion(parentId, lessonId, content, knowledgeTag, null));
         saveChoices(question.getId(), choices);
         return question;
     }
 
     /** Loads the Question with id {@code id}, throwing if it doesn't exist or its Lesson doesn't belong to {@code parentId}. Package-private (not private) so {@code TestService} (task 5) can validate a whole {@code questionIds} list against one parent, same pattern as {@code LessonService#getOwnedOrThrow}. */
     Question getOwnedOrThrow(Long id, Long parentId) {
+        Question question = getById(id);
+        lessonService.getOwnedOrThrow(question.getLessonId(), parentId);
+        return question;
+    }
+
+    /** Loads the Question with id {@code id} with NO ownership check at all. Package-private so {@code StudentAttemptService} can resolve it after doing its own (Parent-unrelated) Student ownership check for {@link #loadAudio} - same reuse shape as {@code LessonService#getById}. */
+    Question getById(Long id) {
         Question question = questionRepository.findById(id);
         if (question == null) {
             throw new BusinessException(CommonErrorCode.NOT_FOUND, "Question not found");
         }
-        lessonService.getOwnedOrThrow(question.getLessonId(), parentId);
         return question;
     }
 
@@ -193,13 +342,14 @@ public class QuestionService extends IBase {
         }
     }
 
-    /** A brand-new (unsaved) Question with both audit timestamps set - only ever for a genuine INSERT (see the class javadoc for why update() must NOT go through this). */
-    private Question newQuestion(Long parentId, Long lessonId, String content, String knowledgeTag) {
+    /** A brand-new (unsaved) Question with both audit timestamps set - only ever for a genuine INSERT (see the class javadoc for why update() must NOT go through this). audioPath is never set here - a brand-new Question never has an audio file yet, it can only be attached afterwards via {@link #uploadAudio} once the Question has an id, same 2-step "create, then attach the file" flow as Lesson's image. */
+    private Question newQuestion(Long parentId, Long lessonId, String content, String knowledgeTag, Boolean hideContentInTest) {
         LocalDateTime now = LocalDateTime.now();
         Question question = new Question();
         question.setLessonId(lessonId);
         question.setContent(content);
         question.setKnowledgeTag(knowledgeTag);
+        question.setHideContentInTest(Boolean.TRUE.equals(hideContentInTest));
         question.setCreatedAt(now);
         question.setUpdatedAt(now);
         question.setCreatedBy("parent:" + parentId);

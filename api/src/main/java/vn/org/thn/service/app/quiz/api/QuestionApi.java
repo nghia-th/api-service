@@ -20,10 +20,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import vn.org.thn.service.app.quiz.dto.QuestionAudio;
 import vn.org.thn.service.app.quiz.dto.QuestionImportResponse;
 import vn.org.thn.service.app.quiz.dto.QuestionRequest;
 import vn.org.thn.service.app.quiz.dto.QuestionResponse;
 import vn.org.thn.service.app.quiz.dto.TemplateFile;
+import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.app.quiz.security.JwtAuthFilter;
 import vn.org.thn.service.app.quiz.service.QuestionImportService;
 import vn.org.thn.service.app.quiz.service.QuestionService;
@@ -127,6 +129,57 @@ public class QuestionApi extends BaseCtl {
     public ResponseEntity<ApiResponse<Void>> delete(@Parameter(description = "Question id") @PathVariable Long id) {
         questionService.delete(id);
         return ok();
+    }
+
+    @Operation(
+            summary = "Upload/replace the question's audio clip",
+            description = "MP3/M4A/WAV/OGG only, 10MB max. Replaces any previous audio for this question. Only the owning Parent can upload it. Blocked once the question has already been answered in an attempt, same rule as update()."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Uploaded successfully - returns the updated Question (hasAudio=true)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Wrong file type - QUIZ_020, or file too large - QUIZ_021"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This question does not belong to the current parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No question with this id - COMMON_005 NOT_FOUND"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "This question has already been answered in a test attempt - QUIZ_019 QUESTION_HAS_ATTEMPTS")
+    })
+    @PostMapping(value = "/{id}/audio", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<QuestionResponse>> uploadAudio(
+            @Parameter(description = "Question id") @PathVariable Long id,
+            @Parameter(description = "The audio file - audio/mpeg, audio/mp4, audio/wav or audio/ogg") @RequestPart MultipartFile file) {
+        return ok(questionService.uploadAudio(id, file));
+    }
+
+    @Operation(
+            summary = "Download the question's audio clip",
+            description = "Only the owning Parent can view it. See StudentAttemptApi for the student-facing equivalent (access gated by whether the question is on a test assigned to that student, not by lesson ownership)."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the audio file (Content-Type set from its stored type)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This question does not belong to the current parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No question with this id, or it has no audio - COMMON_005 NOT_FOUND")
+    })
+    @GetMapping("/{id}/audio")
+    public ResponseEntity<byte[]> audio(@Parameter(description = "Question id") @PathVariable Long id) {
+        QuestionAudio audio = questionService.getAudioOwned(id, CurrentUser.get().userId());
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(audio.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + audio.filename() + "\"")
+                .body(audio.content());
+    }
+
+    @Operation(
+            summary = "Delete the question's audio clip",
+            description = "No-op (still 200) if the question had no audio. Only the owning Parent can delete it. Blocked once the question has already been answered in an attempt, same rule as uploadAudio()."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted (or already had no audio) - returns the updated Question (hasAudio=false)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This question does not belong to the current parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No question with this id - COMMON_005 NOT_FOUND"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "This question has already been answered in a test attempt - QUIZ_019 QUESTION_HAS_ATTEMPTS")
+    })
+    @DeleteMapping("/{id}/audio")
+    public ResponseEntity<ApiResponse<QuestionResponse>> deleteAudio(@Parameter(description = "Question id") @PathVariable Long id) {
+        return ok(questionService.deleteAudio(id));
     }
 
     @Operation(
