@@ -13,6 +13,7 @@ public class TestDetailResponse {
     private Long studentId;
     private String name;
     private String status;
+    private String testType;
     private List<QuestionResponse> questions;
 
     public static TestDetailResponse from(Test test, List<QuestionResponse> questions) {
@@ -22,6 +23,7 @@ public class TestDetailResponse {
         response.studentId = test.getStudentId();
         response.name = test.getName();
         response.status = test.getStatus();
+        response.testType = test.getTestType();
         response.questions = questions;
         return response;
     }

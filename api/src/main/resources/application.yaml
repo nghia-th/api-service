@@ -4,6 +4,15 @@ spring:
   datasource:
     username: postgres
     password: Chuyenviet@1234
+  servlet:
+    multipart:
+      # Nguong Spring TU CHOI truoc khi request toi duoc controller - phai LON HON gioi han nghiep
+      # vu 5MB cua LessonService#uploadImage (QuizErrorCode.LESSON_IMAGE_TOO_LARGE) de check nghiep
+      # vu (bao loi tieng Viet ro rang qua QUIZ_017) luon la nguoi bat truoc, khong de Spring tra ve
+      # loi MaxUploadSizeExceededException chung chung (da them handler rieng o base's
+      # GlobalExceptionHandler, nhung message it than thien hon).
+      max-file-size: 8MB
+      max-request-size: 10MB
 springdoc:
   swagger-ui:
     path: /api.html

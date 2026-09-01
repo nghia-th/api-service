@@ -35,7 +35,10 @@ public enum QuizErrorCode implements ErrorCode {
     IMPORT_FILE_UNREADABLE("QUIZ_012", "Import file could not be read - check the format and template", HttpStatus.BAD_REQUEST),
     ATTEMPT_NOT_SUBMITTED("QUIZ_013", "This attempt has not been submitted yet", HttpStatus.CONFLICT),
     CLASSROOM_HAS_STUDENTS("QUIZ_014", "Classroom still has students - move or delete them first", HttpStatus.CONFLICT),
-    CLASSROOM_HAS_SUBJECTS("QUIZ_015", "Classroom still has subjects - delete them first", HttpStatus.CONFLICT);
+    CLASSROOM_HAS_SUBJECTS("QUIZ_015", "Classroom still has subjects - delete them first", HttpStatus.CONFLICT),
+    LESSON_IMAGE_INVALID_TYPE("QUIZ_016", "Lesson image must be a JPEG, PNG or WebP file", HttpStatus.BAD_REQUEST),
+    LESSON_IMAGE_TOO_LARGE("QUIZ_017", "Lesson image must be 5MB or smaller", HttpStatus.BAD_REQUEST),
+    SUBJECT_NO_QUESTIONS("QUIZ_018", "This subject has no questions yet - add questions before generating a practice test", HttpStatus.BAD_REQUEST);
 
     private final String code;
     private final String message;

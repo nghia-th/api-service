@@ -10,6 +10,7 @@ public class TestResponse {
     private Long studentId;
     private String name;
     private String status;
+    private String testType;
 
     public static TestResponse from(Test test) {
         TestResponse response = new TestResponse();
@@ -18,6 +19,7 @@ public class TestResponse {
         response.studentId = test.getStudentId();
         response.name = test.getName();
         response.status = test.getStatus();
+        response.testType = test.getTestType();
         return response;
     }
 }

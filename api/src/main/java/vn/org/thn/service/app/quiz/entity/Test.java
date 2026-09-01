@@ -17,6 +17,11 @@ import vn.org.thn.service.base.entity.BaseEntity;
  * TestStatus}'s names - kept as {@code String} on the entity (not the enum type) because the
  * MyBatis mapping in this codebase maps columns by simple field type, matching every other
  * entity's plain-String-column style rather than introducing enum-column mapping just here.
+ * <p>
+ * {@code testType} - same plain-String-column reasoning as {@code status}, one of {@link
+ * TestType}'s names. Added 2026-09-01 for the "On tap kien thuc" (practice/review) feature -
+ * {@code V8__test_type.sql} backfills every pre-existing row to {@code REGULAR}, so this column is
+ * never null even for Tests created before this field existed.
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -33,4 +38,5 @@ public class Test extends BaseEntity {
     private Long studentId;
     private String name;
     private String status;
+    private String testType;
 }

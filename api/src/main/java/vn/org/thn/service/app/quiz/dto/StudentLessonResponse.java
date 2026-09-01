@@ -4,25 +4,23 @@ import lombok.Data;
 import vn.org.thn.service.app.quiz.entity.Lesson;
 
 /**
- * {@code hasImage} is derived from {@link Lesson#getImagePath()} being non-null rather than
- * exposing the raw storage path/filename to clients - the actual bytes are fetched separately via
- * {@code GET /api/parent/lessons/{id}/image} (or the student-facing equivalent), same pattern as
- * {@link TemplateFile} for import templates.
+ * Student-facing view of a Lesson's content - deliberately a separate DTO from {@link
+ * LessonResponse} (not just reused) so the Parent-facing shape (which carries {@code subjectId}
+ * for the Parent's own Subject->Lesson navigation) can evolve independently of what a Student is
+ * shown, even though both currently expose the same content fields.
  */
 @Data
-public class LessonResponse {
+public class StudentLessonResponse {
     private Long id;
-    private Long subjectId;
     private String name;
     private String summary;
     private String content;
     private Integer textbookPage;
     private boolean hasImage;
 
-    public static LessonResponse from(Lesson lesson) {
-        LessonResponse response = new LessonResponse();
+    public static StudentLessonResponse from(Lesson lesson) {
+        StudentLessonResponse response = new StudentLessonResponse();
         response.id = lesson.getId();
-        response.subjectId = lesson.getSubjectId();
         response.name = lesson.getName();
         response.summary = lesson.getSummary();
         response.content = lesson.getContent();

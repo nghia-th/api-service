@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import vn.org.thn.service.app.quiz.dto.PracticeGenerateRequest;
 import vn.org.thn.service.app.quiz.dto.TestCreateRequest;
 import vn.org.thn.service.app.quiz.dto.TestDetailResponse;
 import vn.org.thn.service.app.quiz.dto.TestResponse;
@@ -50,6 +51,21 @@ public class TestApi extends BaseCtl {
     @PostMapping
     public ResponseEntity<ApiResponse<TestResponse>> create(@Valid @RequestBody TestCreateRequest request) {
         return ok(testService.create(request));
+    }
+
+    @Operation(
+            summary = "Generate a practice test (Ôn tập)",
+            description = "Picks random questions from the whole Subject's question pool (every Lesson under it) and creates a new Test tagged PRACTICE, assigned immediately (status ASSIGNED). Can be called again any number of times - each call creates a brand-new Test with a freshly-randomized question set; v1's 1-attempt-per-test rule is unaffected since a retake is always a new Test, never a new Attempt on the same Test."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Created successfully - returns the new practice Test"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "The subject has no questions to practice from - QUIZ_018 SUBJECT_NO_QUESTIONS"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "studentId/subjectId belongs to another parent, or the subject is not in the student's classroom - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No student or subject with the given id - COMMON_005 NOT_FOUND")
+    })
+    @PostMapping("/practice")
+    public ResponseEntity<ApiResponse<TestResponse>> generatePractice(@Valid @RequestBody PracticeGenerateRequest request) {
+        return ok(testService.generatePractice(request));
     }
 
     @Operation(

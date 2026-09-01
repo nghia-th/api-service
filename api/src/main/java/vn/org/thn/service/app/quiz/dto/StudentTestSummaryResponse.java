@@ -9,12 +9,14 @@ public class StudentTestSummaryResponse {
     private Long id;
     private String name;
     private String status;
+    private String testType;
 
     public static StudentTestSummaryResponse from(Test test) {
         StudentTestSummaryResponse response = new StudentTestSummaryResponse();
         response.id = test.getId();
         response.name = test.getName();
         response.status = test.getStatus();
+        response.testType = test.getTestType();
         return response;
     }
 }

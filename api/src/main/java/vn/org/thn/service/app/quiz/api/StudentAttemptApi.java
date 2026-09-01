@@ -15,8 +15,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import vn.org.thn.service.app.quiz.dto.AnswerRequest;
 import vn.org.thn.service.app.quiz.dto.StartAttemptResponse;
+import vn.org.thn.service.app.quiz.dto.StudentPracticeGenerateRequest;
 import vn.org.thn.service.app.quiz.dto.StudentTestSummaryResponse;
+import vn.org.thn.service.app.quiz.dto.SubjectResponse;
 import vn.org.thn.service.app.quiz.dto.SubmitAttemptResponse;
+import vn.org.thn.service.app.quiz.dto.TestResponse;
 import vn.org.thn.service.app.quiz.security.JwtAuthFilter;
 import vn.org.thn.service.app.quiz.service.StudentAttemptService;
 import vn.org.thn.service.base.controller.BaseCtl;
@@ -48,6 +51,33 @@ public class StudentAttemptApi extends BaseCtl {
     @GetMapping("/tests")
     public ResponseEntity<ApiResponse<List<StudentTestSummaryResponse>>> listTests() {
         return ok(studentAttemptService.listTests());
+    }
+
+    @Operation(
+            summary = "List subjects available to me",
+            description = "Every Subject in the current Student's own Classroom - used to populate the \"chọn Môn\" dropdown before generating a practice test. The Student never picks a Classroom (they only ever belong to one)."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the current student's own classroom's subjects")
+    })
+    @GetMapping("/subjects")
+    public ResponseEntity<ApiResponse<List<SubjectResponse>>> listSubjects() {
+        return ok(studentAttemptService.listSubjects());
+    }
+
+    @Operation(
+            summary = "Generate my own practice test (Ôn tập)",
+            description = "Self-service version of the Parent's generate-practice endpoint - the current Student picks one Subject and gets a brand-new randomized practice Test back, immediately startable via the normal start/answer/submit flow. Can be called again any number of times for unlimited retakes, each with a freshly-randomized question set."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Created successfully - returns the new practice Test"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "The subject has no questions to practice from - QUIZ_018 SUBJECT_NO_QUESTIONS"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This subject is not in the current student's classroom - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No subject with this id - COMMON_005 NOT_FOUND")
+    })
+    @PostMapping("/tests/practice")
+    public ResponseEntity<ApiResponse<TestResponse>> generatePractice(@Valid @RequestBody StudentPracticeGenerateRequest request) {
+        return ok(studentAttemptService.generatePractice(request));
     }
 
     @Operation(

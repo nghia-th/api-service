@@ -6,13 +6,18 @@ import org.springframework.transaction.annotation.Transactional;
 import vn.org.thn.service.app.quiz.dto.AnswerItem;
 import vn.org.thn.service.app.quiz.dto.AnswerRequest;
 import vn.org.thn.service.app.quiz.dto.StartAttemptResponse;
+import vn.org.thn.service.app.quiz.dto.StudentPracticeGenerateRequest;
 import vn.org.thn.service.app.quiz.dto.StudentQuestionResponse;
 import vn.org.thn.service.app.quiz.dto.StudentTestSummaryResponse;
+import vn.org.thn.service.app.quiz.dto.SubjectResponse;
 import vn.org.thn.service.app.quiz.dto.SubmitAttemptResponse;
+import vn.org.thn.service.app.quiz.dto.TestResponse;
 import vn.org.thn.service.app.quiz.entity.Attempt;
 import vn.org.thn.service.app.quiz.entity.AttemptAnswer;
 import vn.org.thn.service.app.quiz.entity.Choice;
 import vn.org.thn.service.app.quiz.entity.Question;
+import vn.org.thn.service.app.quiz.entity.Student;
+import vn.org.thn.service.app.quiz.entity.Subject;
 import vn.org.thn.service.app.quiz.entity.Test;
 import vn.org.thn.service.app.quiz.entity.TestQuestion;
 import vn.org.thn.service.app.quiz.entity.TestStatus;
@@ -21,6 +26,8 @@ import vn.org.thn.service.app.quiz.repository.AttemptAnswerRepository;
 import vn.org.thn.service.app.quiz.repository.AttemptRepository;
 import vn.org.thn.service.app.quiz.repository.ChoiceRepository;
 import vn.org.thn.service.app.quiz.repository.QuestionRepository;
+import vn.org.thn.service.app.quiz.repository.StudentRepository;
+import vn.org.thn.service.app.quiz.repository.SubjectRepository;
 import vn.org.thn.service.app.quiz.repository.TestQuestionRepository;
 import vn.org.thn.service.app.quiz.repository.TestRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
@@ -44,6 +51,12 @@ import java.util.stream.Collectors;
  * <p>
  * v1 allows at most 1 {@link Attempt} per {@link Test} - {@link #start} is idempotent (returns the
  * existing Attempt instead of creating a second one), per the task 6 spec.
+ * <p>
+ * {@code listSubjects}/{@code generatePractice} (added 2026-09-01, "On tap kien thuc") let the
+ * Student self-generate a practice Test without any Parent involvement - the actual random-pick
+ * logic lives in {@link TestService#generatePracticeForStudent} (this class just resolves the
+ * current Student id and delegates), same "thin controller-ish service delegates to the entity's
+ * owning service" shape {@link StudentLessonService} already uses for viewing Lesson content.
  */
 @Service
 public class StudentAttemptService extends IBase {
@@ -66,11 +79,37 @@ public class StudentAttemptService extends IBase {
     @Autowired
     private AttemptAnswerRepository attemptAnswerRepository;
 
+    @Autowired
+    private StudentRepository studentRepository;
+
+    @Autowired
+    private SubjectRepository subjectRepository;
+
+    @Autowired
+    private TestService testService;
+
     /** Every Test assigned to the current Student, with status so they know what is done vs. pending. */
     public List<StudentTestSummaryResponse> listTests() {
         Long studentId = CurrentUser.get().userId();
         return testRepository.query().eq(Test::getStudentId, studentId).list().stream()
                 .map(StudentTestSummaryResponse::from).toList();
+    }
+
+    /** Every Subject in the current Student's own Classroom - populates the "chọn Môn" dropdown for {@link #generatePractice}, the Student never picks a Classroom (they only ever have the one). */
+    public List<SubjectResponse> listSubjects() {
+        Long studentId = CurrentUser.get().userId();
+        Student student = studentRepository.findById(studentId);
+        if (student == null) {
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Student not found");
+        }
+        return subjectRepository.query().eq(Subject::getClassroomId, student.getClassroomId()).list().stream()
+                .map(SubjectResponse::from).toList();
+    }
+
+    /** Self-service "On tap kien thuc" generation - {@code POST /api/student/tests/practice}. Delegates the actual random-pick + Test/TestQuestion creation to {@link TestService#generatePracticeForStudent}, passing only the current Student's own id (never trusts a studentId from the request body - there is none on {@link StudentPracticeGenerateRequest}, by design). */
+    public TestResponse generatePractice(StudentPracticeGenerateRequest request) {
+        Long studentId = CurrentUser.get().userId();
+        return testService.generatePracticeForStudent(studentId, request.getSubjectId(), request.getName(), request.getQuestionCount());
     }
 
     @Transactional

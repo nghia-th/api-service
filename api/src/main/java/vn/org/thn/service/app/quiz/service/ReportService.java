@@ -170,7 +170,8 @@ public class ReportService extends IBase {
                         testById.get(attempt.getTestId()).getName(),
                         attempt.getSubmittedAt(),
                         attempt.getCorrectCount(),
-                        attempt.getTotalQuestions()))
+                        attempt.getTotalQuestions(),
+                        testById.get(attempt.getTestId()).getTestType()))
                 .toList();
     }
 }

@@ -14,4 +14,5 @@ public class StudentAttemptHistoryItem {
     private LocalDateTime submittedAt;
     private Integer correctCount;
     private Integer totalQuestions;
+    private String testType;
 }
