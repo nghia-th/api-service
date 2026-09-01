@@ -6,10 +6,12 @@ import org.springframework.transaction.annotation.Transactional;
 import vn.org.thn.service.app.quiz.dto.ChoiceRequest;
 import vn.org.thn.service.app.quiz.dto.QuestionRequest;
 import vn.org.thn.service.app.quiz.dto.QuestionResponse;
+import vn.org.thn.service.app.quiz.entity.AttemptAnswer;
 import vn.org.thn.service.app.quiz.entity.Choice;
 import vn.org.thn.service.app.quiz.entity.Question;
 import vn.org.thn.service.app.quiz.entity.TestQuestion;
 import vn.org.thn.service.app.quiz.exception.QuizErrorCode;
+import vn.org.thn.service.app.quiz.repository.AttemptAnswerRepository;
 import vn.org.thn.service.app.quiz.repository.ChoiceRepository;
 import vn.org.thn.service.app.quiz.repository.QuestionRepository;
 import vn.org.thn.service.app.quiz.repository.TestQuestionRepository;
@@ -38,6 +40,22 @@ import java.util.List;
  * freshly-built object (with {@code createdAt}/{@code createdBy} left null) would silently wipe
  * those audit columns to NULL on every update. Same pattern already used correctly by {@code
  * StudentService}/{@code SubjectService}/{@code LessonService} in tasks 2-3.
+ * <p>
+ * BUG FIX 2026-09-01 (real error hit while testing, not hypothetical): {@code update} always
+ * deletes every existing {@link Choice} for the Question and recreates the new set from scratch
+ * (see that method's own comment - true and harmless at task 4 time, when this class's javadoc
+ * said Choice "has no external references of its own"). That stopped being true once task 6 added
+ * {@link AttemptAnswer#getChoiceId()}, a foreign key to {@code choice.id} - editing a Question
+ * that a Student has already answered hit a raw {@code fk_attempt_answer_choice} PostgreSQL
+ * constraint violation (500) instead of a friendly business error. Fixed by {@link
+ * #ensureNotYetAttempted}, called at the top of {@link #update} before anything is mutated -
+ * blocks the WHOLE update once any of the Question's current Choices has been picked in an
+ * Attempt, same "block outright rather than partially allow" philosophy as {@code
+ * TEST_HAS_ATTEMPTS} blocking Test deletion. This is not just a workaround for the FK: silently
+ * rewriting a Question/its Choices out from under a Student's already-graded history would make
+ * that Student's stored {@code AttemptAnswer.correct}/Parent-facing report retroactively
+ * inaccurate, so blocking the edit is the semantically correct behavior, not merely the
+ * convenient one.
  */
 @Service
 public class QuestionService extends IBase {
@@ -53,6 +71,9 @@ public class QuestionService extends IBase {
 
     @Autowired
     private TestQuestionRepository testQuestionRepository;
+
+    @Autowired
+    private AttemptAnswerRepository attemptAnswerRepository;
 
     @Transactional
     public QuestionResponse create(QuestionRequest request) {
@@ -72,6 +93,7 @@ public class QuestionService extends IBase {
     public QuestionResponse update(Long id, QuestionRequest request) {
         Long parentId = CurrentUser.get().userId();
         Question question = getOwnedOrThrow(id, parentId);
+        ensureNotYetAttempted(id);
         lessonService.getOwnedOrThrow(request.getLessonId(), parentId);
         validateExactlyOneCorrectChoice(request.getChoices());
 
@@ -152,6 +174,23 @@ public class QuestionService extends IBase {
 
     private List<Choice> choicesOf(Long questionId) {
         return choiceRepository.query().eq(Choice::getQuestionId, questionId).list();
+    }
+
+    /**
+     * Throws {@link QuizErrorCode#QUESTION_HAS_ATTEMPTS} if any of this Question's CURRENT
+     * Choices has already been picked in an Attempt ({@code AttemptAnswer.choiceId} references
+     * {@code Choice.id} via {@code fk_attempt_answer_choice}). Called at the top of {@link
+     * #update} - see the class javadoc's "BUG FIX 2026-09-01" note for why this exists: {@link
+     * #update} always deletes every current Choice before recreating the new set, which would
+     * otherwise violate that foreign key with a raw DB error the moment any Choice has been
+     * answered.
+     */
+    private void ensureNotYetAttempted(Long questionId) {
+        List<Long> choiceIds = choiceRepository.query().eq(Choice::getQuestionId, questionId).list()
+                .stream().map(Choice::getId).toList();
+        if (!choiceIds.isEmpty() && attemptAnswerRepository.query().in(AttemptAnswer::getChoiceId, choiceIds).exists()) {
+            throw new BusinessException(QuizErrorCode.QUESTION_HAS_ATTEMPTS);
+        }
     }
 
     /** A brand-new (unsaved) Question with both audit timestamps set - only ever for a genuine INSERT (see the class javadoc for why update() must NOT go through this). */

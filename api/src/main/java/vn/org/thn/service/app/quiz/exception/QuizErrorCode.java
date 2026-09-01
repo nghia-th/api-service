@@ -17,7 +17,9 @@ import vn.org.thn.service.base.exception.ErrorCode;
  * could not be wired up yet since {@code Question} did not exist at the time; it was connected
  * in {@code LessonService#delete} once task 4 introduced {@code Question} (see that class's
  * javadoc). Do not confuse it with {@code QUESTION_USED_IN_TEST} (QUIZ_008), which is a
- * different rule guarding Question's own delete endpoint instead.
+ * different rule guarding Question's own delete endpoint instead. {@code QUESTION_HAS_ATTEMPTS}
+ * (QUIZ_019) is a THIRD, separate rule again, guarding Question's own UPDATE endpoint - see
+ * {@code QuestionService#update}'s javadoc.
  */
 public enum QuizErrorCode implements ErrorCode {
 
@@ -38,7 +40,8 @@ public enum QuizErrorCode implements ErrorCode {
     CLASSROOM_HAS_SUBJECTS("QUIZ_015", "Classroom still has subjects - delete them first", HttpStatus.CONFLICT),
     LESSON_IMAGE_INVALID_TYPE("QUIZ_016", "Lesson image must be a JPEG, PNG or WebP file", HttpStatus.BAD_REQUEST),
     LESSON_IMAGE_TOO_LARGE("QUIZ_017", "Lesson image must be 5MB or smaller", HttpStatus.BAD_REQUEST),
-    SUBJECT_NO_QUESTIONS("QUIZ_018", "This subject has no questions yet - add questions before generating a practice test", HttpStatus.BAD_REQUEST);
+    SUBJECT_NO_QUESTIONS("QUIZ_018", "This subject has no questions yet - add questions before generating a practice test", HttpStatus.BAD_REQUEST),
+    QUESTION_HAS_ATTEMPTS("QUIZ_019", "This question has already been answered in a test attempt - it can no longer be edited", HttpStatus.CONFLICT);
 
     private final String code;
     private final String message;

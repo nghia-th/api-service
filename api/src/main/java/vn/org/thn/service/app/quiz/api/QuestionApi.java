@@ -73,7 +73,8 @@ public class QuestionApi extends BaseCtl {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Updated successfully - returns the updated Question with its Choices"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "A required field is missing/malformed, fewer than 2 choices, or not exactly one correct choice - COMMON_001 or QUIZ_007"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This question (or the new lessonId) does not belong to the current parent - COMMON_004 FORBIDDEN"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No question with this id, or no lesson with the given lessonId - COMMON_005 NOT_FOUND")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No question with this id, or no lesson with the given lessonId - COMMON_005 NOT_FOUND"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "This question has already been answered in a test attempt - it can no longer be edited - QUIZ_019 QUESTION_HAS_ATTEMPTS")
     })
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<QuestionResponse>> update(
