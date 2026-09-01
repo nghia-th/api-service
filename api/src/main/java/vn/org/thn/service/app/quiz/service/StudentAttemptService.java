@@ -197,7 +197,7 @@ public class StudentAttemptService extends IBase {
             logInfo("Attempt started: id={}, testId={}, studentId={}", attempt.getId(), testId, studentId);
         }
 
-        return new StartAttemptResponse(attempt.getId(), studentQuestionsOf(testId));
+        return new StartAttemptResponse(attempt.getId(), studentQuestionsOf(testId, attempt.getId()));
     }
 
     @Transactional
@@ -405,6 +405,40 @@ public class StudentAttemptService extends IBase {
     }
 
     /**
+     * Saves (or clears, when {@code text} is null/blank) the Student's TYPED answer for a
+     * SPEAKING question - {@code PUT
+     * /api/student/attempts/{attemptId}/questions/{questionId}/speaking-answer/text} (2026-09-01,
+     * typed-essay alternative to voice recording - see {@code AnswerMode}'s javadoc). Independent
+     * of {@link #uploadSpeakingAnswer}/{@link #deleteSpeakingAnswer} (the recorded-audio answer) -
+     * a question's {@code answerMode} is only a UI hint for which control(s) the take-test screen
+     * shows (see {@code AnswerMode}'s javadoc); this endpoint itself does not enforce it, so a
+     * typed answer can always be saved for any SPEAKING question regardless of its configured
+     * mode. Same "locked once submitted" rule as the audio answer.
+     */
+    @Transactional
+    public void saveSpeakingTextAnswer(Long attemptId, Long questionId, String text) {
+        Long studentId = CurrentUser.get().userId();
+        Attempt attempt = getOwnedAttemptOrThrow(attemptId, studentId);
+        if (attempt.getSubmittedAt() != null) {
+            throw new BusinessException(QuizErrorCode.ATTEMPT_ALREADY_SUBMITTED);
+        }
+        getSpeakingQuestionOfAttemptOrThrow(attempt, questionId);
+
+        AttemptAnswer answer = attemptAnswerRepository.query()
+                .eq(AttemptAnswer::getAttemptId, attemptId)
+                .eq(AttemptAnswer::getQuestionId, questionId)
+                .one();
+        if (answer == null) {
+            answer = new AttemptAnswer();
+            answer.setAttemptId(attemptId);
+            answer.setQuestionId(questionId);
+        }
+        answer.setAnswerText(text == null || text.isBlank() ? null : text);
+        attemptAnswerRepository.save(answer);
+        logInfo("Speaking text answer saved: attemptId={}, questionId={}, studentId={}", attemptId, questionId, studentId);
+    }
+
+    /**
      * The Student's own playback of their recorded answer - {@code GET
      * /api/student/attempts/{attemptId}/questions/{questionId}/speaking-answer}. Unlike upload/
      * delete, this is NOT blocked by submission - a Student may want to listen back both while
@@ -521,15 +555,27 @@ public class StudentAttemptService extends IBase {
         return attempt;
     }
 
-    /** The test's questions in display order, mapped to the no-correct-answer Student view - see {@code StudentChoiceResponse}. */
-    private List<StudentQuestionResponse> studentQuestionsOf(Long testId) {
+    /**
+     * The test's questions in display order, mapped to the no-correct-answer Student view - see
+     * {@code StudentChoiceResponse}. {@code attemptId} was added 2026-09-01 to look up each
+     * SPEAKING question's already-saved typed answer (if any) for resume support - see {@code
+     * StudentQuestionResponse#answerText}'s javadoc for why this is fetched eagerly here rather
+     * than lazily like the recorded-audio answer.
+     */
+    private List<StudentQuestionResponse> studentQuestionsOf(Long testId, Long attemptId) {
         List<TestQuestion> testQuestions = testQuestionRepository.query().eq(TestQuestion::getTestId, testId).list();
         testQuestions.sort((a, b) -> Integer.compare(a.getOrderIndex(), b.getOrderIndex()));
+
+        Map<Long, AttemptAnswer> answerByQuestionId = attemptAnswerRepository.query()
+                .eq(AttemptAnswer::getAttemptId, attemptId).list().stream()
+                .collect(Collectors.toMap(AttemptAnswer::getQuestionId, answer -> answer));
 
         return testQuestions.stream().map(testQuestion -> {
             Question question = questionRepository.findById(testQuestion.getQuestionId());
             List<Choice> choices = choiceRepository.query().eq(Choice::getQuestionId, question.getId()).list();
-            return StudentQuestionResponse.from(question, choices);
+            AttemptAnswer answer = answerByQuestionId.get(question.getId());
+            String answerText = answer == null ? null : answer.getAnswerText();
+            return StudentQuestionResponse.from(question, choices, answerText);
         }).toList();
     }
 }

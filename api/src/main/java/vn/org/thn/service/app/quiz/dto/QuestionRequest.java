@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.util.List;
@@ -28,6 +29,11 @@ import java.util.List;
  * "text fields here, file via its own endpoint" split {@code Lesson} already uses for its
  * illustrative image). {@code questionType} was added the same day for the "speaking question"
  * feature - see {@code QuestionType}'s javadoc.
+ * <p>
+ * {@code answerMode}/{@code referenceAnswer} were added 2026-09-01 - see {@code AnswerMode}'s
+ * javadoc and {@code Question#referenceAnswer}'s javadoc respectively. Both are only meaningful
+ * when {@code questionType} is SPEAKING; {@code QuestionService} nulls them out for MULTIPLE_CHOICE
+ * regardless of what a caller sends.
  */
 @Data
 public class QuestionRequest {
@@ -52,4 +58,11 @@ public class QuestionRequest {
 
     @Schema(type = "string", example = "MULTIPLE_CHOICE", allowableValues = {"MULTIPLE_CHOICE", "SPEAKING"}, description = "Question type (task \"Cau hoi dang tu luan/thu am\", 2026-09-01). Optional - null/omitted means MULTIPLE_CHOICE, same as every existing question before this field existed. SPEAKING questions carry no choices and are answered by the Student recording their voice instead - see QuestionType's javadoc.", nullable = true)
     private String questionType;
+
+    @Schema(type = "string", example = "AUDIO", allowableValues = {"AUDIO", "TEXT", "BOTH"}, description = "How the Student may answer a SPEAKING question (2026-09-01) - AUDIO = record voice only (original v1 behavior), TEXT = typed answer only, BOTH = either/both. Optional - null/omitted means AUDIO. Ignored (stored as null) when questionType is MULTIPLE_CHOICE.", nullable = true)
+    private String answerMode;
+
+    @Size(max = 10000)
+    @Schema(type = "string", description = "Optional reference/model answer text (2026-09-01) - purely for the Parent's own later comparison when reviewing a SPEAKING answer, never shown to the Student, never auto-graded. Ignored (stored as null) when questionType is MULTIPLE_CHOICE.", nullable = true)
+    private String referenceAnswer;
 }

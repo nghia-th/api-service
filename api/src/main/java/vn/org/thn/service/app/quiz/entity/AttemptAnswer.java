@@ -28,6 +28,13 @@ import vn.org.thn.service.base.db.mybatis.annotation.Table;
  * "not reviewed yet"; unlike {@code correct}, it is NEVER read by any score computation ({@code
  * Attempt.correctCount}/{@code scorePercent}), per the user's explicit "khong tinh diem, chi de
  * tham khao" answer when this feature was scoped.
+ * <p>
+ * {@code answerText} was added 2026-09-01 for the Question's own {@code answerMode} (see {@link
+ * vn.org.thn.service.app.quiz.entity.AnswerMode}) - the Student's TYPED answer, alongside (not
+ * instead of) {@code answerAudioPath}: both may be non-null at once for a BOTH-mode question,
+ * there is no exclusivity enforced. Saved via its own endpoint ({@code
+ * StudentAttemptService#saveSpeakingTextAnswer}), same "locked once submitted" rule as the audio
+ * answer.
  */
 @Data
 @Entity
@@ -48,4 +55,7 @@ public class AttemptAnswer {
 
     /** Ghi chu doi chieu cua Phu huynh cho cau tra loi SPEAKING - null = chua cham, true/false = Phu huynh tu danh gia. Khong anh huong diem so tu dong. */
     private Boolean parentMarkedCorrect;
+
+    /** Cau tra loi go chu (khong phai ghi am) cua Hoc sinh cho cau hoi SPEAKING dang TEXT/BOTH - null neu chua nhap hoac cau hoi la MULTIPLE_CHOICE/AUDIO-only chua duoc dung toi. Doc lap voi answerAudioPath (khong loai tru nhau). */
+    private String answerText;
 }

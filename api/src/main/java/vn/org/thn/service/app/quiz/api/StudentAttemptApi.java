@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -21,6 +22,7 @@ import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.AnswerRequest;
 import vn.org.thn.service.app.quiz.dto.QuestionAudio;
 import vn.org.thn.service.app.quiz.dto.SpeakingAnswerAudio;
+import vn.org.thn.service.app.quiz.dto.SpeakingTextAnswerRequest;
 import vn.org.thn.service.app.quiz.dto.StartAttemptResponse;
 import vn.org.thn.service.app.quiz.dto.StudentPracticeGenerateRequest;
 import vn.org.thn.service.app.quiz.dto.StudentTestSummaryResponse;
@@ -210,5 +212,25 @@ public class StudentAttemptApi extends BaseCtl {
                 .contentType(MediaType.parseMediaType(audio.contentType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + audio.filename() + "\"")
                 .body(audio.content());
+    }
+
+    @Operation(
+            summary = "Save my typed answer for a SPEAKING question",
+            description = "Typed-essay alternative to voice recording (2026-09-01, see AnswerMode). Upserts by questionId, same as saveAnswers - callable repeatedly before submit. Sending null/blank text clears it back to unanswered. Rejected once the attempt has already been submitted."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Saved (or cleared) - no response body"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "questionId is not part of this attempt's test - COMMON_002, or text exceeds 10000 characters"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This attempt does not belong to the current student - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No attempt/question with this id - COMMON_005 NOT_FOUND"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Attempt was already submitted - QUIZ_010, or the question is not a SPEAKING question - QUIZ_025")
+    })
+    @PutMapping("/attempts/{attemptId}/questions/{questionId}/speaking-answer/text")
+    public ResponseEntity<ApiResponse<Void>> saveSpeakingTextAnswer(
+            @Parameter(description = "Attempt id") @PathVariable Long attemptId,
+            @Parameter(description = "Question id - must be a SPEAKING question on this attempt's test") @PathVariable Long questionId,
+            @Valid @RequestBody SpeakingTextAnswerRequest request) {
+        studentAttemptService.saveSpeakingTextAnswer(attemptId, questionId, request.getText());
+        return ok();
     }
 }

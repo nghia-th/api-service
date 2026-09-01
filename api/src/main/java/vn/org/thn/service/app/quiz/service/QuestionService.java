@@ -8,6 +8,7 @@ import vn.org.thn.service.app.quiz.dto.ChoiceRequest;
 import vn.org.thn.service.app.quiz.dto.QuestionAudio;
 import vn.org.thn.service.app.quiz.dto.QuestionRequest;
 import vn.org.thn.service.app.quiz.dto.QuestionResponse;
+import vn.org.thn.service.app.quiz.entity.AnswerMode;
 import vn.org.thn.service.app.quiz.entity.AttemptAnswer;
 import vn.org.thn.service.app.quiz.entity.Choice;
 import vn.org.thn.service.app.quiz.entity.Question;
@@ -104,9 +105,12 @@ public class QuestionService extends IBase {
         lessonService.getOwnedOrThrow(request.getLessonId(), parentId);
         String questionType = normalizeQuestionType(request.getQuestionType());
         List<ChoiceRequest> validChoices = validateChoices(questionType, request.getChoices());
+        String answerMode = normalizeAnswerMode(questionType, request.getAnswerMode());
+        String referenceAnswer = normalizeReferenceAnswer(questionType, request.getReferenceAnswer());
 
         Question question = questionRepository.save(newQuestion(parentId, request.getLessonId(),
-                request.getContent(), request.getKnowledgeTag(), request.getHideContentInTest(), questionType));
+                request.getContent(), request.getKnowledgeTag(), request.getHideContentInTest(), questionType,
+                answerMode, referenceAnswer));
         List<Choice> choices = saveChoices(question.getId(), validChoices);
 
         logInfo("Question created: id={}, lessonId={}, parentId={}, questionType={}", question.getId(), question.getLessonId(), parentId, questionType);
@@ -121,12 +125,16 @@ public class QuestionService extends IBase {
         lessonService.getOwnedOrThrow(request.getLessonId(), parentId);
         String questionType = normalizeQuestionType(request.getQuestionType());
         List<ChoiceRequest> validChoices = validateChoices(questionType, request.getChoices());
+        String answerMode = normalizeAnswerMode(questionType, request.getAnswerMode());
+        String referenceAnswer = normalizeReferenceAnswer(questionType, request.getReferenceAnswer());
 
         question.setLessonId(request.getLessonId());
         question.setContent(request.getContent());
         question.setKnowledgeTag(request.getKnowledgeTag());
         question.setHideContentInTest(Boolean.TRUE.equals(request.getHideContentInTest()));
         question.setQuestionType(questionType);
+        question.setAnswerMode(answerMode);
+        question.setReferenceAnswer(referenceAnswer);
         question.setUpdatedAt(LocalDateTime.now());
         question.setUpdatedBy("parent:" + parentId);
         question = questionRepository.save(question);
@@ -309,8 +317,10 @@ public class QuestionService extends IBase {
         // Import always produces MULTIPLE_CHOICE questions - v1 does not support importing
         // SPEAKING questions from a file (the user's explicit answer when this feature was
         // scoped: "chi nhap tay + tai audio sau", the same "hand-entry only" decision already made
-        // for the listening-question audio clip).
-        Question question = questionRepository.save(newQuestion(parentId, lessonId, content, knowledgeTag, null, QuestionType.MULTIPLE_CHOICE.name()));
+        // for the listening-question audio clip). answerMode/referenceAnswer are both null here -
+        // meaningless for MULTIPLE_CHOICE (normalizeAnswerMode/normalizeReferenceAnswer would null
+        // them out anyway, skipped here since the type is already known statically).
+        Question question = questionRepository.save(newQuestion(parentId, lessonId, content, knowledgeTag, null, QuestionType.MULTIPLE_CHOICE.name(), null, null));
         saveChoices(question.getId(), choices);
         return question;
     }
@@ -353,7 +363,7 @@ public class QuestionService extends IBase {
     }
 
     /** A brand-new (unsaved) Question with both audit timestamps set - only ever for a genuine INSERT (see the class javadoc for why update() must NOT go through this). audioPath is never set here - a brand-new Question never has an audio file yet, it can only be attached afterwards via {@link #uploadAudio} once the Question has an id, same 2-step "create, then attach the file" flow as Lesson's image. */
-    private Question newQuestion(Long parentId, Long lessonId, String content, String knowledgeTag, Boolean hideContentInTest, String questionType) {
+    private Question newQuestion(Long parentId, Long lessonId, String content, String knowledgeTag, Boolean hideContentInTest, String questionType, String answerMode, String referenceAnswer) {
         LocalDateTime now = LocalDateTime.now();
         Question question = new Question();
         question.setLessonId(lessonId);
@@ -361,6 +371,8 @@ public class QuestionService extends IBase {
         question.setKnowledgeTag(knowledgeTag);
         question.setHideContentInTest(Boolean.TRUE.equals(hideContentInTest));
         question.setQuestionType(questionType);
+        question.setAnswerMode(answerMode);
+        question.setReferenceAnswer(referenceAnswer);
         question.setCreatedAt(now);
         question.setUpdatedAt(now);
         question.setCreatedBy("parent:" + parentId);
@@ -423,5 +435,35 @@ public class QuestionService extends IBase {
             throw new BusinessException(QuizErrorCode.QUESTION_MUST_HAVE_ONE_CORRECT_CHOICE);
         }
         return choices;
+    }
+
+    /**
+     * Normalizes {@code answerMode} (2026-09-01, typed-essay alternative - see {@link
+     * AnswerMode}'s javadoc) - null for MULTIPLE_CHOICE (meaningless there, regardless of what a
+     * caller sends), AUDIO for SPEAKING when null/blank (the original v1 behavior stays the
+     * default so every pre-existing SPEAKING question keeps working exactly as before), otherwise
+     * must be one of {@link AnswerMode}'s exact names.
+     */
+    private String normalizeAnswerMode(String questionType, String answerMode) {
+        if (!QuestionType.SPEAKING.name().equals(questionType)) {
+            return null;
+        }
+        if (answerMode == null || answerMode.isBlank()) {
+            return AnswerMode.AUDIO.name();
+        }
+        try {
+            return AnswerMode.valueOf(answerMode.trim()).name();
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(CommonErrorCode.INVALID_PARAMETER,
+                    "answerMode must be AUDIO, TEXT or BOTH, got: " + answerMode);
+        }
+    }
+
+    /** Nulls out {@code referenceAnswer} for MULTIPLE_CHOICE (meaningless there); trims and passes it through as-is for SPEAKING, blank collapses to null. See {@code Question#referenceAnswer}'s javadoc. */
+    private String normalizeReferenceAnswer(String questionType, String referenceAnswer) {
+        if (!QuestionType.SPEAKING.name().equals(questionType) || referenceAnswer == null || referenceAnswer.isBlank()) {
+            return null;
+        }
+        return referenceAnswer.trim();
     }
 }

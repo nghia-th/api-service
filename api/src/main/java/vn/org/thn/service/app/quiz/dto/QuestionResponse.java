@@ -26,6 +26,10 @@ public class QuestionResponse {
     private boolean hideContentInTest;
     /** {@link vn.org.thn.service.app.quiz.entity.QuestionType#name()} - "MULTIPLE_CHOICE" or "SPEAKING", added 2026-09-01. Never null - {@code Question#getQuestionType()} is always set (see QuestionService#newQuestion). */
     private String questionType;
+    /** {@link vn.org.thn.service.app.quiz.entity.AnswerMode#name()} - added 2026-09-01, only meaningful when questionType is SPEAKING (null for MULTIPLE_CHOICE). */
+    private String answerMode;
+    /** Parent's own optional reference/model answer note (2026-09-01) - see Question#referenceAnswer's javadoc. Null for MULTIPLE_CHOICE or when never entered. */
+    private String referenceAnswer;
 
     public static QuestionResponse from(Question question, List<Choice> choices) {
         QuestionResponse response = new QuestionResponse();
@@ -37,6 +41,8 @@ public class QuestionResponse {
         response.hasAudio = question.getAudioPath() != null;
         response.hideContentInTest = Boolean.TRUE.equals(question.getHideContentInTest());
         response.questionType = question.getQuestionType();
+        response.answerMode = question.getAnswerMode();
+        response.referenceAnswer = question.getReferenceAnswer();
         return response;
     }
 }

@@ -45,6 +45,17 @@ import vn.org.thn.service.base.entity.BaseEntity;
  * V10__speaking_question.sql}, and every new Question must set it explicitly (see {@code
  * QuestionService#newQuestion}), same "DEFAULT only backfills old rows" caveat already documented
  * on {@code Test#testType}.
+ * <p>
+ * {@code answerMode}/{@code referenceAnswer} were added 2026-09-01 after the Parent tested the
+ * original SPEAKING v1 and asked for more - see {@link AnswerMode}'s javadoc for {@code
+ * answerMode} (only meaningful when {@code questionType} is SPEAKING, backfilled to AUDIO by
+ * {@code V11__speaking_answer_mode.sql}). {@code referenceAnswer} is a free-text OPTIONAL note the
+ * Parent can type when authoring a SPEAKING question - a model/expected answer purely for the
+ * Parent's OWN later comparison while reviewing the Student's recorded/typed answer ({@code
+ * ReportService#getAttemptReport}); it is never shown to the Student and never auto-graded against
+ * (the whole feature stays "khong tinh diem, chi de tham khao" - see {@link QuestionType}'s
+ * javadoc). Null/blank for MULTIPLE_CHOICE questions (nulled out by {@code
+ * QuestionService#normalizeReferenceAnswer}).
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -69,4 +80,10 @@ public class Question extends BaseEntity {
 
     /** {@link QuestionType#name()} - MULTIPLE_CHOICE (mac dinh, cau hoi trac nghiem nhu cu) hoac SPEAKING (cau hoi hoc sinh tra loi bang cach ghi am giong noi, xem QuestionType's javadoc). */
     private String questionType;
+
+    /** {@link AnswerMode#name()} - chi co y nghia khi questionType la SPEAKING (xem AnswerMode's javadoc). Null/khong dung toi voi cau MULTIPLE_CHOICE. */
+    private String answerMode;
+
+    /** Dap an tham khao Phu huynh tu go (khong bat buoc) khi tao cau hoi SPEAKING - chi de Phu huynh doi chieu khi xem lai, KHONG hien thi cho Hoc sinh, KHONG dung de tu cham. Null voi cau MULTIPLE_CHOICE. */
+    private String referenceAnswer;
 }

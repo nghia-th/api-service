@@ -123,6 +123,10 @@ public class ReportService extends IBase {
             String questionType = question.getQuestionType() == null ? QuestionType.MULTIPLE_CHOICE.name() : question.getQuestionType();
             boolean hasSpeakingAnswer = answer != null && answer.getAnswerAudioPath() != null;
             Boolean parentMarkedCorrect = answer == null ? null : answer.getParentMarkedCorrect();
+            // answerText/answerMode/referenceAnswer added 2026-09-01 for the typed-essay
+            // alternative - see AnswerMode's javadoc and AttemptAnswerDetail's javadoc.
+            String answerText = answer == null ? null : answer.getAnswerText();
+            String answerMode = question.getAnswerMode();
 
             details.add(new AttemptAnswerDetail(
                     question.getId(),
@@ -133,7 +137,10 @@ public class ReportService extends IBase {
                     tag,
                     questionType,
                     hasSpeakingAnswer,
-                    parentMarkedCorrect));
+                    parentMarkedCorrect,
+                    answerText,
+                    answerMode,
+                    question.getReferenceAnswer()));
 
             int[] stat = tagStats.computeIfAbsent(tag, key -> new int[2]);
             stat[1]++;
