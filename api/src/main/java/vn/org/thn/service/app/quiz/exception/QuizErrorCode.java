@@ -33,7 +33,9 @@ public enum QuizErrorCode implements ErrorCode {
     ATTEMPT_ALREADY_SUBMITTED("QUIZ_010", "This attempt was already submitted", HttpStatus.CONFLICT),
     IMPORT_TOO_MANY_ROWS("QUIZ_011", "Import file has too many rows", HttpStatus.BAD_REQUEST),
     IMPORT_FILE_UNREADABLE("QUIZ_012", "Import file could not be read - check the format and template", HttpStatus.BAD_REQUEST),
-    ATTEMPT_NOT_SUBMITTED("QUIZ_013", "This attempt has not been submitted yet", HttpStatus.CONFLICT);
+    ATTEMPT_NOT_SUBMITTED("QUIZ_013", "This attempt has not been submitted yet", HttpStatus.CONFLICT),
+    CLASSROOM_HAS_STUDENTS("QUIZ_014", "Classroom still has students - move or delete them first", HttpStatus.CONFLICT),
+    CLASSROOM_HAS_SUBJECTS("QUIZ_015", "Classroom still has subjects - delete them first", HttpStatus.CONFLICT);
 
     private final String code;
     private final String message;

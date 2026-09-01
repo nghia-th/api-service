@@ -1,15 +1,15 @@
 CREATE TABLE subject
 (
-    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
-    parent_id  BIGINT       NOT NULL,
-    name       VARCHAR(255) NOT NULL,
-    created_at DATETIME,
-    updated_at DATETIME,
-    created_by VARCHAR(100),
-    updated_by VARCHAR(100),
-    deleted    BOOLEAN NOT NULL DEFAULT FALSE,
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    classroom_id BIGINT       NOT NULL,
+    name         VARCHAR(255) NOT NULL,
+    created_at   DATETIME,
+    updated_at   DATETIME,
+    created_by   VARCHAR(100),
+    updated_by   VARCHAR(100),
+    deleted      BOOLEAN NOT NULL DEFAULT FALSE,
 
-    CONSTRAINT fk_subject_parent FOREIGN KEY (parent_id) REFERENCES parent (id)
+    CONSTRAINT fk_subject_classroom FOREIGN KEY (classroom_id) REFERENCES classroom (id)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4;
 

@@ -15,6 +15,10 @@ import vn.org.thn.service.base.entity.BaseEntity;
  * through {@code POST /api/parent/students} (task 2) - there is no student self-registration, so
  * this class has no counterpart to {@code Parent}'s register flow.
  * <p>
+ * {@code classroomId} - each Student belongs to exactly 1 {@link Classroom} - replaces the old
+ * free-text {@code grade} field entirely (not kept alongside it, per the user's decision when
+ * Classroom was introduced).
+ * <p>
  * {@code username} is unique system-wide (not just per parent), since it doubles as the student's
  * login identifier alongside {@code password}. See {@link Parent} for the {@code callSuper}/
  * {@code @ToString.Exclude} reasoning - identical here.
@@ -32,7 +36,7 @@ public class Student extends BaseEntity {
 
     private Long parentId;
     private String fullName;
-    private String grade;
+    private Long classroomId;
     private String username;
 
     @ToString.Exclude

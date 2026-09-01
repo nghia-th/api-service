@@ -2,6 +2,7 @@ package vn.org.thn.service.app.quiz.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -13,9 +14,9 @@ public class StudentCreateRequest {
     @Schema(type = "string", example = "Jane Doe", description = "Student's full name")
     private String fullName;
 
-    @NotBlank
-    @Schema(type = "string", example = "Grade 3", description = "Free-text grade level, e.g. \"Grade 3\" (not a fixed enum in v1)")
-    private String grade;
+    @NotNull
+    @Schema(type = "integer", example = "1", description = "Id of the Classroom this student belongs to - must be owned by the current parent")
+    private Long classroomId;
 
     @NotBlank
     @Schema(type = "string", example = "student01", description = "Login username - must be unique system-wide, not just within this parent's own students")

@@ -9,7 +9,7 @@ public class StudentResponse {
     private Long id;
     private Long parentId;
     private String fullName;
-    private String grade;
+    private Long classroomId;
     private String username;
 
     public static StudentResponse from(Student student) {
@@ -17,7 +17,7 @@ public class StudentResponse {
         response.id = student.getId();
         response.parentId = student.getParentId();
         response.fullName = student.getFullName();
-        response.grade = student.getGrade();
+        response.classroomId = student.getClassroomId();
         response.username = student.getUsername();
         return response;
     }

@@ -8,8 +8,9 @@ import lombok.Data;
  * Request body for {@code PUT /api/parent/students/{id}}. Every field is optional - null means
  * "leave unchanged", so a parent can update just one field (e.g. only reset the password) without
  * resending the rest. See {@code StudentService#update} for the null-vs-blank handling: a blank
- * (non-null) string is also treated as "leave unchanged" for fullName/grade/username, while a
- * blank password is rejected by {@code @Size} below before it ever reaches the service.
+ * (non-null) string is also treated as "leave unchanged" for fullName/username, while a blank
+ * password is rejected by {@code @Size} below before it ever reaches the service. {@code
+ * classroomId} follows the plain null-means-unchanged rule (no blank-string case - it's a Long).
  */
 @Data
 public class StudentUpdateRequest {
@@ -17,8 +18,8 @@ public class StudentUpdateRequest {
     @Schema(type = "string", example = "Jane Doe", description = "New full name, or omit/null to leave unchanged")
     private String fullName;
 
-    @Schema(type = "string", example = "Grade 4", description = "New grade level, or omit/null to leave unchanged")
-    private String grade;
+    @Schema(type = "integer", example = "1", description = "New Classroom id (must be owned by the current parent), or omit/null to leave unchanged")
+    private Long classroomId;
 
     @Schema(type = "string", example = "student01", description = "New username (still checked for system-wide uniqueness), or omit/null to leave unchanged")
     private String username;

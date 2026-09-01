@@ -40,15 +40,19 @@ public class StudentService extends IBase {
     @Autowired
     private StudentRepository studentRepository;
 
+    @Autowired
+    private ClassroomService classroomService;
+
     public StudentResponse create(StudentCreateRequest request) {
         Long parentId = CurrentUser.get().userId();
         ensureUsernameAvailable(request.getUsername(), null);
+        classroomService.getOwnedOrThrow(request.getClassroomId(), parentId);
 
         LocalDateTime now = LocalDateTime.now();
         Student student = new Student();
         student.setParentId(parentId);
         student.setFullName(request.getFullName());
-        student.setGrade(request.getGrade());
+        student.setClassroomId(request.getClassroomId());
         student.setUsername(request.getUsername());
         student.setPassword(passwordEncoder.encode(request.getPassword()));
         student.setCreatedAt(now);
@@ -72,8 +76,9 @@ public class StudentService extends IBase {
         if (StringUtils.hasText(request.getFullName())) {
             student.setFullName(request.getFullName());
         }
-        if (StringUtils.hasText(request.getGrade())) {
-            student.setGrade(request.getGrade());
+        if (request.getClassroomId() != null) {
+            classroomService.getOwnedOrThrow(request.getClassroomId(), parentId);
+            student.setClassroomId(request.getClassroomId());
         }
         if (StringUtils.hasText(request.getUsername()) && !request.getUsername().equals(student.getUsername())) {
             ensureUsernameAvailable(request.getUsername(), student.getId());

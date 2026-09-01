@@ -70,14 +70,17 @@ public class SubjectApi extends BaseCtl {
 
     @Operation(
             summary = "List my subjects",
-            description = "Every Subject belonging to the current Parent. Not paginated in v1."
+            description = "Every Subject belonging to the current Parent, optionally narrowed to one Classroom via ?classroomId=. Not paginated in v1."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the current parent's subjects - never another parent's")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the current parent's subjects - never another parent's"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "classroomId was supplied but does not belong to the current parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "classroomId was supplied but no classroom exists with that id - COMMON_005 NOT_FOUND")
     })
     @GetMapping
-    public ResponseEntity<ApiResponse<List<SubjectResponse>>> list() {
-        return ok(subjectService.list());
+    public ResponseEntity<ApiResponse<List<SubjectResponse>>> list(
+            @Parameter(description = "Optional Classroom id to narrow the list to") @org.springframework.web.bind.annotation.RequestParam(required = false) Long classroomId) {
+        return ok(subjectService.list(classroomId));
     }
 
     @Operation(
