@@ -9,14 +9,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.AnswerRequest;
 import vn.org.thn.service.app.quiz.dto.QuestionAudio;
+import vn.org.thn.service.app.quiz.dto.SpeakingAnswerAudio;
 import vn.org.thn.service.app.quiz.dto.StartAttemptResponse;
 import vn.org.thn.service.app.quiz.dto.StudentPracticeGenerateRequest;
 import vn.org.thn.service.app.quiz.dto.StudentTestSummaryResponse;
@@ -147,5 +151,64 @@ public class StudentAttemptApi extends BaseCtl {
     @PostMapping("/attempts/{attemptId}/submit")
     public ResponseEntity<ApiResponse<SubmitAttemptResponse>> submit(@Parameter(description = "Attempt id") @PathVariable Long attemptId) {
         return ok(studentAttemptService.submit(attemptId));
+    }
+
+    @Operation(
+            summary = "Upload/re-record my spoken answer for a SPEAKING question",
+            description = "Speaking-question feature (task \"Cau hoi dang tu luan/thu am\", 2026-09-01). MP3/M4A/WAV/OGG only, 10MB max. Replaces any previous recording for this question within this attempt - callable any number of times to delete-and-redo before submitting. Rejected once the attempt has already been submitted."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Uploaded successfully - no response body"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "questionId is not part of this attempt's test, wrong file type - QUIZ_023, or file too large - QUIZ_024"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This attempt does not belong to the current student - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No attempt/question with this id - COMMON_005 NOT_FOUND"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Attempt was already submitted - QUIZ_010, or the question is not a SPEAKING question - QUIZ_025")
+    })
+    @PostMapping(value = "/attempts/{attemptId}/questions/{questionId}/speaking-answer", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<Void>> uploadSpeakingAnswer(
+            @Parameter(description = "Attempt id") @PathVariable Long attemptId,
+            @Parameter(description = "Question id - must be a SPEAKING question on this attempt's test") @PathVariable Long questionId,
+            @Parameter(description = "The recorded audio file - audio/mpeg, audio/mp4, audio/wav or audio/ogg") @RequestPart MultipartFile file) {
+        studentAttemptService.uploadSpeakingAnswer(attemptId, questionId, file);
+        return ok();
+    }
+
+    @Operation(
+            summary = "Delete my spoken answer for a SPEAKING question",
+            description = "Clears the recording back to blank so the student can record again - no-op if nothing was recorded yet. Rejected once the attempt has already been submitted."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted (or already had no answer) - no response body"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This attempt does not belong to the current student - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No attempt/question with this id - COMMON_005 NOT_FOUND"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Attempt was already submitted - QUIZ_010, or the question is not a SPEAKING question - QUIZ_025")
+    })
+    @DeleteMapping("/attempts/{attemptId}/questions/{questionId}/speaking-answer")
+    public ResponseEntity<ApiResponse<Void>> deleteSpeakingAnswer(
+            @Parameter(description = "Attempt id") @PathVariable Long attemptId,
+            @Parameter(description = "Question id") @PathVariable Long questionId) {
+        studentAttemptService.deleteSpeakingAnswer(attemptId, questionId);
+        return ok();
+    }
+
+    @Operation(
+            summary = "Play back my own spoken answer for a SPEAKING question",
+            description = "Works both while still taking the test and after submitting - unlike upload/delete, playback is never blocked by submission."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the audio file (Content-Type set from its stored type)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This attempt does not belong to the current student - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No attempt/question with this id, or nothing recorded yet - COMMON_005 NOT_FOUND"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "The question is not a SPEAKING question - QUIZ_025")
+    })
+    @GetMapping("/attempts/{attemptId}/questions/{questionId}/speaking-answer")
+    public ResponseEntity<byte[]> speakingAnswer(
+            @Parameter(description = "Attempt id") @PathVariable Long attemptId,
+            @Parameter(description = "Question id") @PathVariable Long questionId) {
+        SpeakingAnswerAudio audio = studentAttemptService.getOwnSpeakingAnswerAudio(attemptId, questionId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(audio.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + audio.filename() + "\"")
+                .body(audio.content());
     }
 }

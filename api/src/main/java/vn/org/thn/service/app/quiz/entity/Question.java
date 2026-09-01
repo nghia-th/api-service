@@ -35,6 +35,16 @@ import vn.org.thn.service.base.entity.BaseEntity;
  * rely on the audio alone (a real "listening test" UX) - enforced server-side in {@code
  * StudentQuestionResponse#from} (never trust the client to hide it), and has no effect at all when
  * {@code audioPath} is null (no audio = content always shown, regardless of this flag).
+ * <p>
+ * {@code questionType} was added 2026-09-01 for the "speaking question" feature - see {@link
+ * QuestionType}'s javadoc for the full design (a SPEAKING question has no {@link Choice}s, is
+ * answered by the Student recording their voice instead of picking one, and is never auto-graded
+ * or counted toward the test's score). Stored as a plain String (its {@code name()}), same
+ * pattern as {@code Test#getStatus()}/{@code Test#getTestType()} - every Question before this
+ * field existed was backfilled to {@code MULTIPLE_CHOICE} by {@code
+ * V10__speaking_question.sql}, and every new Question must set it explicitly (see {@code
+ * QuestionService#newQuestion}), same "DEFAULT only backfills old rows" caveat already documented
+ * on {@code Test#testType}.
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -56,4 +66,7 @@ public class Question extends BaseEntity {
 
     /** true = an "content" khoi man hinh lam bai cua Hoc sinh khi cau hoi co audio (bat buoc nghe moi biet). Khong co tac dung neu audioPath null. Mac dinh false/null (hien content nhu cu). */
     private Boolean hideContentInTest;
+
+    /** {@link QuestionType#name()} - MULTIPLE_CHOICE (mac dinh, cau hoi trac nghiem nhu cu) hoac SPEAKING (cau hoi hoc sinh tra loi bang cach ghi am giong noi, xem QuestionType's javadoc). */
+    private String questionType;
 }

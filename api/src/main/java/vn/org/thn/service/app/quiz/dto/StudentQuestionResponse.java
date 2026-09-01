@@ -29,6 +29,8 @@ public class StudentQuestionResponse {
     private String content;
     private boolean hasAudio;
     private List<StudentChoiceResponse> choices;
+    /** {@link vn.org.thn.service.app.quiz.entity.QuestionType#name()}, added 2026-09-01 - tells the client whether to render a choice list (MULTIPLE_CHOICE) or a voice recorder (SPEAKING, choices is always empty for these). */
+    private String questionType;
 
     public static StudentQuestionResponse from(Question question, List<Choice> choices) {
         StudentQuestionResponse response = new StudentQuestionResponse();
@@ -38,6 +40,7 @@ public class StudentQuestionResponse {
         boolean hideContent = response.hasAudio && Boolean.TRUE.equals(question.getHideContentInTest());
         response.content = hideContent ? null : question.getContent();
         response.choices = choices.stream().map(StudentChoiceResponse::from).toList();
+        response.questionType = question.getQuestionType();
         return response;
     }
 }

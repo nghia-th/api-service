@@ -22,7 +22,15 @@ import vn.org.thn.service.base.exception.ErrorCode;
  * {@code QuestionService#update}'s javadoc. {@code QUESTION_AUDIO_INVALID_TYPE}/{@code
  * QUESTION_AUDIO_TOO_LARGE} (QUIZ_020/QUIZ_021) guard {@code QuestionService#uploadAudio}, same
  * shape as {@code LESSON_IMAGE_INVALID_TYPE}/{@code LESSON_IMAGE_TOO_LARGE} (QUIZ_016/QUIZ_017)
- * for Lesson's illustrative image.
+ * for Lesson's illustrative image. {@code QUESTION_CHOICES_REQUIRED} (QUIZ_022, added 2026-09-01
+ * for the "speaking question" feature) replaces the removed {@code @Size(min = 2)} bean
+ * validation on {@code QuestionRequest#choices} - that annotation could not be conditional on
+ * {@code questionType}, so the "at least 2 choices" rule moved into {@code
+ * QuestionService#validateChoices}, MULTIPLE_CHOICE only. {@code SPEAKING_ANSWER_INVALID_TYPE}/
+ * {@code SPEAKING_ANSWER_TOO_LARGE} (QUIZ_023/QUIZ_024) guard {@code
+ * StudentAttemptService#uploadSpeakingAnswer}, same shape as QUIZ_020/QUIZ_021 for Question audio.
+ * {@code QUESTION_NOT_SPEAKING_TYPE} (QUIZ_025) guards every speaking-answer/grade endpoint
+ * against being called on an ordinary MULTIPLE_CHOICE question.
  */
 public enum QuizErrorCode implements ErrorCode {
 
@@ -46,7 +54,11 @@ public enum QuizErrorCode implements ErrorCode {
     SUBJECT_NO_QUESTIONS("QUIZ_018", "This subject has no questions yet - add questions before generating a practice test", HttpStatus.BAD_REQUEST),
     QUESTION_HAS_ATTEMPTS("QUIZ_019", "This question has already been answered in a test attempt - it can no longer be edited", HttpStatus.CONFLICT),
     QUESTION_AUDIO_INVALID_TYPE("QUIZ_020", "Question audio must be an MP3, M4A, WAV or OGG file", HttpStatus.BAD_REQUEST),
-    QUESTION_AUDIO_TOO_LARGE("QUIZ_021", "Question audio must be 10MB or smaller", HttpStatus.BAD_REQUEST);
+    QUESTION_AUDIO_TOO_LARGE("QUIZ_021", "Question audio must be 10MB or smaller", HttpStatus.BAD_REQUEST),
+    QUESTION_CHOICES_REQUIRED("QUIZ_022", "A multiple-choice question needs at least 2 choices", HttpStatus.BAD_REQUEST),
+    SPEAKING_ANSWER_INVALID_TYPE("QUIZ_023", "Speaking answer must be an MP3, M4A, WAV or OGG file", HttpStatus.BAD_REQUEST),
+    SPEAKING_ANSWER_TOO_LARGE("QUIZ_024", "Speaking answer must be 10MB or smaller", HttpStatus.BAD_REQUEST),
+    QUESTION_NOT_SPEAKING_TYPE("QUIZ_025", "This question is not a speaking question", HttpStatus.BAD_REQUEST);
 
     private final String code;
     private final String message;

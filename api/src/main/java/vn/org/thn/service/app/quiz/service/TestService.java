@@ -11,6 +11,7 @@ import vn.org.thn.service.app.quiz.dto.TestResponse;
 import vn.org.thn.service.app.quiz.entity.Attempt;
 import vn.org.thn.service.app.quiz.entity.Lesson;
 import vn.org.thn.service.app.quiz.entity.Question;
+import vn.org.thn.service.app.quiz.entity.QuestionType;
 import vn.org.thn.service.app.quiz.entity.Student;
 import vn.org.thn.service.app.quiz.entity.Subject;
 import vn.org.thn.service.app.quiz.entity.Test;
@@ -287,6 +288,11 @@ public class TestService extends IBase {
      * TestQuestion -&gt; Test traversal (see {@code lesson-content-feature-backend-2026-09-01.md}) -
      * {@code .in()} is a silent no-op on an empty collection, which would otherwise be
      * misread as "no filter" instead of "no matches" and leak every Question in the table.
+     * <p>
+     * SPEAKING questions are filtered out here (added 2026-09-01, "speaking question" feature) -
+     * per the user's explicit answer when that feature was scoped ("khong - chi random cau trac
+     * nghiem"), "On tap kien thuc" only ever picks auto-graded MULTIPLE_CHOICE questions, never a
+     * question that needs the Student to record their voice and the Parent to review it by hand.
      */
     private List<Long> questionIdsOfSubject(Long subjectId) {
         List<Long> lessonIds = lessonRepository.query().eq(Lesson::getSubjectId, subjectId).list()
@@ -295,6 +301,8 @@ public class TestService extends IBase {
             return List.of();
         }
         return questionRepository.query().in(Question::getLessonId, lessonIds).list()
-                .stream().map(Question::getId).toList();
+                .stream()
+                .filter(question -> !QuestionType.SPEAKING.name().equals(question.getQuestionType()))
+                .map(Question::getId).toList();
     }
 }

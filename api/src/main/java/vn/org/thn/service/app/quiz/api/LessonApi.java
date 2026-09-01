@@ -22,10 +22,13 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.LessonCreateRequest;
 import vn.org.thn.service.app.quiz.dto.LessonImage;
+import vn.org.thn.service.app.quiz.dto.LessonImportResponse;
 import vn.org.thn.service.app.quiz.dto.LessonResponse;
 import vn.org.thn.service.app.quiz.dto.LessonUpdateRequest;
+import vn.org.thn.service.app.quiz.dto.TemplateFile;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.app.quiz.security.JwtAuthFilter;
+import vn.org.thn.service.app.quiz.service.LessonImportService;
 import vn.org.thn.service.app.quiz.service.LessonService;
 import vn.org.thn.service.base.controller.BaseCtl;
 import vn.org.thn.service.base.response.ApiResponse;
@@ -50,6 +53,9 @@ public class LessonApi extends BaseCtl {
 
     @Autowired
     private LessonService lessonService;
+
+    @Autowired
+    private LessonImportService lessonImportService;
 
     @Operation(
             summary = "Create a lesson",
@@ -176,5 +182,39 @@ public class LessonApi extends BaseCtl {
     @DeleteMapping("/{id}/image")
     public ResponseEntity<ApiResponse<LessonResponse>> deleteImage(@Parameter(description = "Lesson id") @PathVariable Long id) {
         return ok(lessonService.deleteImage(id));
+    }
+
+    @Operation(
+            summary = "Download the lesson import template",
+            description = "Returns a ready-to-fill Excel (default) or CSV file with the fixed 4-column layout (Ten bai hoc/Tom tat/Noi dung/Trang SGK) plus one illustrative example row, which the import endpoint recognizes and skips automatically whether or not it is deleted before uploading. Same shape as QuestionApi#importTemplate."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the template file (Content-Type set per the requested format)")
+    })
+    @GetMapping("/import-template")
+    public ResponseEntity<byte[]> importTemplate(
+            @Parameter(description = "\"xlsx\" (default) or \"csv\"") @RequestParam(required = false, defaultValue = "xlsx") String format) {
+        TemplateFile template = lessonImportService.generateTemplate(format);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(template.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + template.filename() + "\"")
+                .body(template.content());
+    }
+
+    @Operation(
+            summary = "Import lessons from an Excel/CSV file",
+            description = "Best-effort per row - one bad row does not stop the others in the same file. subjectId must belong to the current parent, checked before the file is even read. The lesson image is not part of the import - attach it per-lesson afterwards via POST /api/parent/lessons/{id}/image."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "File was read - check the response body for per-row errors, if any (this is 200 even when some/all rows failed, since the request itself succeeded)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "File could not be read at all (wrong format/corrupt/empty), or has more rows than the per-import limit - QUIZ_012 or QUIZ_011"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "subjectId belongs to another parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No subject with this subjectId - COMMON_005 NOT_FOUND")
+    })
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<LessonImportResponse>> importFile(
+            @Parameter(description = "Subject id every imported lesson is attached to") @RequestParam Long subjectId,
+            @Parameter(description = "The .xlsx or .csv file, filled in from the downloaded template") @RequestPart MultipartFile file) {
+        return ok(lessonImportService.importFile(subjectId, file));
     }
 }

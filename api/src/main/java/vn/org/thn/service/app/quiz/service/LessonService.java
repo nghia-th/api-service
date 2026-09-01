@@ -46,6 +46,14 @@ import java.util.UUID;
  * FK has no ON DELETE CASCADE - simply failing the DELETE with a raw constraint-violation 500)
  * when it still has Questions.
  * <p>
+ * FILE IMPORT (added 2026-09-01, "phan bai hoc cho phep import bang file"): {@link
+ * #createFromImportRow} is the persistence entry point {@link LessonImportService} calls back
+ * into for each valid row of an uploaded Excel/CSV file, same "one shared persistence path for
+ * both hand-entry and import" shape {@link QuestionService#createFromImportRow} already
+ * established for Question. The lesson image is never part of the import row (same "text fields
+ * via the file, the image uploaded afterwards" split as hand-entry lessons) - a Parent still has
+ * to attach it per-lesson afterwards through {@link #uploadImage}.
+ * <p>
  * IMAGE STORAGE: the illustrative image's bytes are never put in the database - only its
  * server-side filename lives in {@code Lesson.imagePath}. Files live under {@link #IMAGE_DIR}
  * (a service-local folder, per {@link DatabasePath}'s own javadoc guidance not to extend that
@@ -81,21 +89,42 @@ public class LessonService extends IBase {
         Long parentId = CurrentUser.get().userId();
         subjectService.getOwnedOrThrow(request.getSubjectId(), parentId);
 
+        Lesson lesson = lessonRepository.save(newLesson(parentId, request.getSubjectId(), request.getName(),
+                request.getSummary(), request.getContent(), request.getTextbookPage()));
+
+        logInfo("Lesson created: id={}, subjectId={}, parentId={}", lesson.getId(), lesson.getSubjectId(), parentId);
+        return LessonResponse.from(lesson);
+    }
+
+    /**
+     * Creates one Lesson for {@link LessonImportService} - same persistence logic as {@link
+     * #create}, minus re-deriving {@code parentId}/re-checking {@code subjectId} ownership a
+     * second time per row (the import already resolved and verified both once for the whole
+     * file). {@code @Transactional} on this method only (not the caller's import loop), same
+     * "one row's insert is atomic with itself but independent of every other row" reasoning as
+     * {@code QuestionService#createFromImportRow} - a later row failing must not roll back an
+     * earlier row's already-committed success (best-effort per-row import, see task 4's
+     * precedent).
+     */
+    @org.springframework.transaction.annotation.Transactional
+    Lesson createFromImportRow(Long subjectId, Long parentId, String name, String summary, String content, Integer textbookPage) {
+        return lessonRepository.save(newLesson(parentId, subjectId, name, summary, content, textbookPage));
+    }
+
+    /** A brand-new (unsaved) Lesson with both audit timestamps set - only ever for a genuine INSERT, same reasoning as {@code QuestionService#newQuestion}. imagePath is never set here - a brand-new Lesson never has an image yet, only attachable afterwards via {@link #uploadImage} once the Lesson has an id. */
+    private Lesson newLesson(Long parentId, Long subjectId, String name, String summary, String content, Integer textbookPage) {
         LocalDateTime now = LocalDateTime.now();
         Lesson lesson = new Lesson();
-        lesson.setSubjectId(request.getSubjectId());
-        lesson.setName(request.getName());
-        lesson.setSummary(request.getSummary());
-        lesson.setContent(request.getContent());
-        lesson.setTextbookPage(request.getTextbookPage());
+        lesson.setSubjectId(subjectId);
+        lesson.setName(name);
+        lesson.setSummary(summary);
+        lesson.setContent(content);
+        lesson.setTextbookPage(textbookPage);
         lesson.setCreatedAt(now);
         lesson.setUpdatedAt(now);
         lesson.setCreatedBy("parent:" + parentId);
         lesson.setUpdatedBy("parent:" + parentId);
-        lesson = lessonRepository.save(lesson);
-
-        logInfo("Lesson created: id={}, subjectId={}, parentId={}", lesson.getId(), lesson.getSubjectId(), parentId);
-        return LessonResponse.from(lesson);
+        return lesson;
     }
 
     public LessonResponse update(Long id, LessonUpdateRequest request) {

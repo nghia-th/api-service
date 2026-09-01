@@ -4,7 +4,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.util.List;
@@ -15,16 +14,20 @@ import java.util.List;
  * replace of the question's content and choices), so one DTO is reused for create and update,
  * same reasoning as {@code SubjectRequest} in task 3.
  * <p>
- * {@code @Size(min = 2)} enforces "at least 2 choices"; the separate "exactly 1 correct choice"
- * rule cannot be expressed as a single-field Bean Validation constraint (it depends on every
- * element together), so it is checked in {@code QuestionService} instead - see {@code
- * QuizErrorCode#QUESTION_MUST_HAVE_ONE_CORRECT_CHOICE}.
+ * {@code choices} lost its {@code @NotNull @Size(min = 2)} bean validation 2026-09-01 when the
+ * "speaking question" feature (see {@code QuestionType}) needed it to be legitimately empty for
+ * a SPEAKING question - that check, plus "exactly 1 correct choice" (which could never be a
+ * single-field Bean Validation constraint anyway, it depends on every element together), both now
+ * live in {@code QuestionService#validateChoices}, applied only when {@code questionType} is
+ * MULTIPLE_CHOICE - see {@code QuizErrorCode#QUESTION_CHOICES_REQUIRED}/{@code
+ * #QUESTION_MUST_HAVE_ONE_CORRECT_CHOICE}.
  * <p>
  * {@code hideContentInTest} was added 2026-09-01 for the "listening question" feature - it goes
  * through this same create/update request (set together with {@code content}/{@code
  * knowledgeTag}/choices) unlike the audio FILE itself, which is a separate upload endpoint (same
  * "text fields here, file via its own endpoint" split {@code Lesson} already uses for its
- * illustrative image).
+ * illustrative image). {@code questionType} was added the same day for the "speaking question"
+ * feature - see {@code QuestionType}'s javadoc.
  */
 @Data
 public class QuestionRequest {
@@ -40,12 +43,13 @@ public class QuestionRequest {
     @Schema(type = "string", example = "Do/Does", description = "Optional free-text knowledge tag, used later to group results by topic")
     private String knowledgeTag;
 
-    @NotNull
-    @Size(min = 2, message = "A question needs at least 2 choices")
     @Valid
-    @Schema(description = "The question's choices - at least 2, with exactly one marked correct")
+    @Schema(description = "The question's choices. Required (at least 2, with exactly one marked correct) when questionType is MULTIPLE_CHOICE (or omitted, the default); ignored/must be empty when questionType is SPEAKING - see QuestionService#validateChoices.", nullable = true)
     private List<ChoiceRequest> choices;
 
     @Schema(type = "boolean", example = "false", description = "When this question has an audio clip (task \"Cau hoi dang am thanh\", 2026-09-01): true hides 'content' from the Student's take-test screen so they must rely on the audio alone. No effect when the question has no audio yet. Optional - null/omitted means false (content always shown), same as every existing question before this field existed.")
     private Boolean hideContentInTest;
+
+    @Schema(type = "string", example = "MULTIPLE_CHOICE", allowableValues = {"MULTIPLE_CHOICE", "SPEAKING"}, description = "Question type (task \"Cau hoi dang tu luan/thu am\", 2026-09-01). Optional - null/omitted means MULTIPLE_CHOICE, same as every existing question before this field existed. SPEAKING questions carry no choices and are answered by the Student recording their voice instead - see QuestionType's javadoc.", nullable = true)
+    private String questionType;
 }

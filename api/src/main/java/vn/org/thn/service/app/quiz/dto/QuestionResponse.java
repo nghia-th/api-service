@@ -24,6 +24,8 @@ public class QuestionResponse {
     private List<ChoiceResponse> choices;
     private boolean hasAudio;
     private boolean hideContentInTest;
+    /** {@link vn.org.thn.service.app.quiz.entity.QuestionType#name()} - "MULTIPLE_CHOICE" or "SPEAKING", added 2026-09-01. Never null - {@code Question#getQuestionType()} is always set (see QuestionService#newQuestion). */
+    private String questionType;
 
     public static QuestionResponse from(Question question, List<Choice> choices) {
         QuestionResponse response = new QuestionResponse();
@@ -34,6 +36,7 @@ public class QuestionResponse {
         response.choices = choices.stream().map(ChoiceResponse::from).toList();
         response.hasAudio = question.getAudioPath() != null;
         response.hideContentInTest = Boolean.TRUE.equals(question.getHideContentInTest());
+        response.questionType = question.getQuestionType();
         return response;
     }
 }

@@ -4,13 +4,20 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import vn.org.thn.service.app.quiz.dto.AttemptReportResponse;
+import vn.org.thn.service.app.quiz.dto.SpeakingAnswerAudio;
+import vn.org.thn.service.app.quiz.dto.SpeakingGradeRequest;
 import vn.org.thn.service.app.quiz.dto.StudentAttemptHistoryItem;
 import vn.org.thn.service.app.quiz.service.ReportService;
 import vn.org.thn.service.base.controller.BaseCtl;
@@ -59,5 +66,45 @@ public class ReportApi extends BaseCtl {
     public ResponseEntity<ApiResponse<List<StudentAttemptHistoryItem>>> getStudentAttemptHistory(
             @Parameter(description = "Student id") @PathVariable Long studentId) {
         return ok(reportService.getStudentAttemptHistory(studentId));
+    }
+
+    @Operation(
+            summary = "Play back a student's recorded speaking answer",
+            description = "Speaking-question feature (task \"Cau hoi dang tu luan/thu am\", 2026-09-01). Only reachable once the attempt has been submitted, same gate as the full report."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the audio file (Content-Type set from its stored type)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This attempt's test does not belong to the current parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No attempt with this id, or nothing recorded for this question - COMMON_005 NOT_FOUND"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Attempt has not been submitted yet - QUIZ_013 ATTEMPT_NOT_SUBMITTED")
+    })
+    @GetMapping("/attempts/{attemptId}/questions/{questionId}/speaking-answer")
+    public ResponseEntity<byte[]> speakingAnswer(
+            @Parameter(description = "Attempt id") @PathVariable Long attemptId,
+            @Parameter(description = "Question id") @PathVariable Long questionId) {
+        SpeakingAnswerAudio audio = reportService.getSpeakingAnswerAudio(attemptId, questionId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(audio.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + audio.filename() + "\"")
+                .body(audio.content());
+    }
+
+    @Operation(
+            summary = "Grade a student's recorded speaking answer (reference only)",
+            description = "Purely a note for the parent's own report reading - never affects the attempt's score. correct=null clears it back to \"not reviewed\". Only reachable once the attempt has been submitted."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Graded successfully - no response body"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This attempt's test does not belong to the current parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No attempt/question with this id - COMMON_005 NOT_FOUND"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Attempt has not been submitted yet - QUIZ_013, or the question is not a SPEAKING question - QUIZ_025")
+    })
+    @PutMapping("/attempts/{attemptId}/questions/{questionId}/grade")
+    public ResponseEntity<ApiResponse<Void>> gradeSpeakingAnswer(
+            @Parameter(description = "Attempt id") @PathVariable Long attemptId,
+            @Parameter(description = "Question id") @PathVariable Long questionId,
+            @Valid @RequestBody SpeakingGradeRequest request) {
+        reportService.gradeSpeakingAnswer(attemptId, questionId, request.getCorrect());
+        return ok();
     }
 }

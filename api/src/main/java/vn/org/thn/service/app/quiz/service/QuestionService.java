@@ -11,6 +11,7 @@ import vn.org.thn.service.app.quiz.dto.QuestionResponse;
 import vn.org.thn.service.app.quiz.entity.AttemptAnswer;
 import vn.org.thn.service.app.quiz.entity.Choice;
 import vn.org.thn.service.app.quiz.entity.Question;
+import vn.org.thn.service.app.quiz.entity.QuestionType;
 import vn.org.thn.service.app.quiz.entity.TestQuestion;
 import vn.org.thn.service.app.quiz.exception.QuizErrorCode;
 import vn.org.thn.service.app.quiz.repository.AttemptAnswerRepository;
@@ -101,13 +102,14 @@ public class QuestionService extends IBase {
     public QuestionResponse create(QuestionRequest request) {
         Long parentId = CurrentUser.get().userId();
         lessonService.getOwnedOrThrow(request.getLessonId(), parentId);
-        validateExactlyOneCorrectChoice(request.getChoices());
+        String questionType = normalizeQuestionType(request.getQuestionType());
+        List<ChoiceRequest> validChoices = validateChoices(questionType, request.getChoices());
 
         Question question = questionRepository.save(newQuestion(parentId, request.getLessonId(),
-                request.getContent(), request.getKnowledgeTag(), request.getHideContentInTest()));
-        List<Choice> choices = saveChoices(question.getId(), request.getChoices());
+                request.getContent(), request.getKnowledgeTag(), request.getHideContentInTest(), questionType));
+        List<Choice> choices = saveChoices(question.getId(), validChoices);
 
-        logInfo("Question created: id={}, lessonId={}, parentId={}", question.getId(), question.getLessonId(), parentId);
+        logInfo("Question created: id={}, lessonId={}, parentId={}, questionType={}", question.getId(), question.getLessonId(), parentId, questionType);
         return QuestionResponse.from(question, choices);
     }
 
@@ -117,23 +119,27 @@ public class QuestionService extends IBase {
         Question question = getOwnedOrThrow(id, parentId);
         ensureNotYetAttempted(id);
         lessonService.getOwnedOrThrow(request.getLessonId(), parentId);
-        validateExactlyOneCorrectChoice(request.getChoices());
+        String questionType = normalizeQuestionType(request.getQuestionType());
+        List<ChoiceRequest> validChoices = validateChoices(questionType, request.getChoices());
 
         question.setLessonId(request.getLessonId());
         question.setContent(request.getContent());
         question.setKnowledgeTag(request.getKnowledgeTag());
         question.setHideContentInTest(Boolean.TRUE.equals(request.getHideContentInTest()));
+        question.setQuestionType(questionType);
         question.setUpdatedAt(LocalDateTime.now());
         question.setUpdatedBy("parent:" + parentId);
         question = questionRepository.save(question);
 
         // Simplest correct approach for v1 (per task 4 spec): replace every choice rather than
         // diffing old vs. new - a Question's choices are small in number and have no external
-        // references of their own (no separate "Choice API").
+        // references of their own (no separate "Choice API"). For a SPEAKING question validChoices
+        // is always empty (see validateChoices), so this simply clears out any leftover choices
+        // from before it was switched from MULTIPLE_CHOICE, if ever.
         choiceRepository.delete().eq(Choice::getQuestionId, id).execute();
-        List<Choice> choices = saveChoices(question.getId(), request.getChoices());
+        List<Choice> choices = saveChoices(question.getId(), validChoices);
 
-        logInfo("Question updated: id={}, parentId={}", question.getId(), parentId);
+        logInfo("Question updated: id={}, parentId={}, questionType={}", question.getId(), parentId, questionType);
         return QuestionResponse.from(question, choices);
     }
 
@@ -300,7 +306,11 @@ public class QuestionService extends IBase {
      */
     @Transactional
     Question createFromImportRow(Long lessonId, Long parentId, String content, String knowledgeTag, List<ChoiceRequest> choices) {
-        Question question = questionRepository.save(newQuestion(parentId, lessonId, content, knowledgeTag, null));
+        // Import always produces MULTIPLE_CHOICE questions - v1 does not support importing
+        // SPEAKING questions from a file (the user's explicit answer when this feature was
+        // scoped: "chi nhap tay + tai audio sau", the same "hand-entry only" decision already made
+        // for the listening-question audio clip).
+        Question question = questionRepository.save(newQuestion(parentId, lessonId, content, knowledgeTag, null, QuestionType.MULTIPLE_CHOICE.name()));
         saveChoices(question.getId(), choices);
         return question;
     }
@@ -343,13 +353,14 @@ public class QuestionService extends IBase {
     }
 
     /** A brand-new (unsaved) Question with both audit timestamps set - only ever for a genuine INSERT (see the class javadoc for why update() must NOT go through this). audioPath is never set here - a brand-new Question never has an audio file yet, it can only be attached afterwards via {@link #uploadAudio} once the Question has an id, same 2-step "create, then attach the file" flow as Lesson's image. */
-    private Question newQuestion(Long parentId, Long lessonId, String content, String knowledgeTag, Boolean hideContentInTest) {
+    private Question newQuestion(Long parentId, Long lessonId, String content, String knowledgeTag, Boolean hideContentInTest, String questionType) {
         LocalDateTime now = LocalDateTime.now();
         Question question = new Question();
         question.setLessonId(lessonId);
         question.setContent(content);
         question.setKnowledgeTag(knowledgeTag);
         question.setHideContentInTest(Boolean.TRUE.equals(hideContentInTest));
+        question.setQuestionType(questionType);
         question.setCreatedAt(now);
         question.setUpdatedAt(now);
         question.setCreatedBy("parent:" + parentId);
@@ -369,11 +380,48 @@ public class QuestionService extends IBase {
         return saved;
     }
 
-    /** Package-private so {@link QuestionImportService} can run the same check per row before calling {@link #createFromImportRow}. */
-    void validateExactlyOneCorrectChoice(List<ChoiceRequest> choices) {
+    /**
+     * Normalizes {@code questionType} from a request - null/blank means {@link
+     * QuestionType#MULTIPLE_CHOICE} (every existing Parent app/client that predates this field),
+     * otherwise it must be one of {@link QuestionType}'s exact names.
+     */
+    private String normalizeQuestionType(String questionType) {
+        if (questionType == null || questionType.isBlank()) {
+            return QuestionType.MULTIPLE_CHOICE.name();
+        }
+        try {
+            return QuestionType.valueOf(questionType.trim()).name();
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(CommonErrorCode.INVALID_PARAMETER,
+                    "questionType must be MULTIPLE_CHOICE or SPEAKING, got: " + questionType);
+        }
+    }
+
+    /**
+     * Validates {@code choices} against {@code questionType} (added 2026-09-01 for the "speaking
+     * question" feature) and returns the list to actually persist:
+     * <ul>
+     * <li>SPEAKING - always returns an empty list, regardless of what was sent. A SPEAKING
+     * question never has choices (see {@link QuestionType}'s javadoc) - silently dropping any
+     * choices a caller mistakenly sends is simpler than erroring on it, and harmless either way.
+     * <li>MULTIPLE_CHOICE - requires at least 2 choices ({@link
+     * QuizErrorCode#QUESTION_CHOICES_REQUIRED}, replaces the {@code @Size(min = 2)} bean
+     * validation removed from {@code QuestionRequest#choices} since it could not be conditional
+     * on questionType) with exactly one marked correct ({@link
+     * QuizErrorCode#QUESTION_MUST_HAVE_ONE_CORRECT_CHOICE}, unchanged from before this feature).
+     * </ul>
+     */
+    private List<ChoiceRequest> validateChoices(String questionType, List<ChoiceRequest> choices) {
+        if (QuestionType.SPEAKING.name().equals(questionType)) {
+            return List.of();
+        }
+        if (choices == null || choices.size() < 2) {
+            throw new BusinessException(QuizErrorCode.QUESTION_CHOICES_REQUIRED);
+        }
         long correctCount = choices.stream().filter(choice -> Boolean.TRUE.equals(choice.getCorrect())).count();
         if (correctCount != 1) {
             throw new BusinessException(QuizErrorCode.QUESTION_MUST_HAVE_ONE_CORRECT_CHOICE);
         }
+        return choices;
     }
 }

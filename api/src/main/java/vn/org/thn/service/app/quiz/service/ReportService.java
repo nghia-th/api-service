@@ -5,11 +5,13 @@ import org.springframework.stereotype.Service;
 import vn.org.thn.service.app.quiz.dto.AttemptAnswerDetail;
 import vn.org.thn.service.app.quiz.dto.AttemptReportResponse;
 import vn.org.thn.service.app.quiz.dto.KnowledgeTagBreakdown;
+import vn.org.thn.service.app.quiz.dto.SpeakingAnswerAudio;
 import vn.org.thn.service.app.quiz.dto.StudentAttemptHistoryItem;
 import vn.org.thn.service.app.quiz.entity.Attempt;
 import vn.org.thn.service.app.quiz.entity.AttemptAnswer;
 import vn.org.thn.service.app.quiz.entity.Choice;
 import vn.org.thn.service.app.quiz.entity.Question;
+import vn.org.thn.service.app.quiz.entity.QuestionType;
 import vn.org.thn.service.app.quiz.entity.Student;
 import vn.org.thn.service.app.quiz.entity.Test;
 import vn.org.thn.service.app.quiz.entity.TestQuestion;
@@ -72,6 +74,9 @@ public class ReportService extends IBase {
     @Autowired
     private StudentService studentService;
 
+    @Autowired
+    private StudentAttemptService studentAttemptService;
+
     public AttemptReportResponse getAttemptReport(Long attemptId) {
         Long parentId = CurrentUser.get().userId();
         Attempt attempt = attemptRepository.findById(attemptId);
@@ -115,13 +120,20 @@ public class ReportService extends IBase {
                     ? "Chưa phân loại"
                     : question.getKnowledgeTag();
 
+            String questionType = question.getQuestionType() == null ? QuestionType.MULTIPLE_CHOICE.name() : question.getQuestionType();
+            boolean hasSpeakingAnswer = answer != null && answer.getAnswerAudioPath() != null;
+            Boolean parentMarkedCorrect = answer == null ? null : answer.getParentMarkedCorrect();
+
             details.add(new AttemptAnswerDetail(
                     question.getId(),
                     question.getContent(),
                     chosenChoice == null ? null : chosenChoice.getContent(),
                     correctChoice == null ? null : correctChoice.getContent(),
                     correct,
-                    tag));
+                    tag,
+                    questionType,
+                    hasSpeakingAnswer,
+                    parentMarkedCorrect));
 
             int[] stat = tagStats.computeIfAbsent(tag, key -> new int[2]);
             stat[1]++;
@@ -173,5 +185,80 @@ public class ReportService extends IBase {
                         attempt.getTotalQuestions(),
                         testById.get(attempt.getTestId()).getTestType()))
                 .toList();
+    }
+
+    /**
+     * The owning Parent's playback of a Student's recorded SPEAKING answer - {@code GET
+     * /api/parent/attempts/{attemptId}/questions/{questionId}/speaking-answer} (task "Cau hoi
+     * dang tu luan/thu am", 2026-09-01). Only reachable once the attempt has been submitted (same
+     * {@code QUIZ_013 ATTEMPT_NOT_SUBMITTED} gate {@link #getAttemptReport} already applies) -
+     * reviewing a mid-attempt recording is not a supported flow in v1. Reuses {@link
+     * StudentAttemptService#loadSpeakingAnswerAudio} (package-private) rather than duplicating
+     * file-reading logic here, same reuse shape {@code StudentAttemptService#getQuestionAudio}
+     * already established for {@code QuestionService#loadAudio}.
+     */
+    public SpeakingAnswerAudio getSpeakingAnswerAudio(Long attemptId, Long questionId) {
+        Long parentId = CurrentUser.get().userId();
+        Attempt attempt = getOwnedSubmittedAttemptOrThrow(attemptId, parentId);
+        AttemptAnswer answer = attemptAnswerRepository.query()
+                .eq(AttemptAnswer::getAttemptId, attemptId)
+                .eq(AttemptAnswer::getQuestionId, questionId)
+                .one();
+        if (answer == null || answer.getAnswerAudioPath() == null) {
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "No speaking answer recorded for this question");
+        }
+        return studentAttemptService.loadSpeakingAnswerAudio(answer);
+    }
+
+    /**
+     * The owning Parent's own reference grade for a SPEAKING answer - {@code PUT
+     * /api/parent/attempts/{attemptId}/questions/{questionId}/grade}. {@code correct == null}
+     * clears it back to "not reviewed". Purely a note for the Parent's own report reading - NEVER
+     * recomputes {@code Attempt.correctCount}/{@code scorePercent}, per the user's explicit
+     * "khong tinh diem, chi de tham khao" answer when this feature was scoped (see {@code
+     * AttemptAnswer#parentMarkedCorrect}'s javadoc). Only reachable once the attempt has been
+     * submitted, same gate as {@link #getSpeakingAnswerAudio} - grading an answer the Student
+     * might still change makes no sense.
+     */
+    public void gradeSpeakingAnswer(Long attemptId, Long questionId, Boolean correct) {
+        Long parentId = CurrentUser.get().userId();
+        Attempt attempt = getOwnedSubmittedAttemptOrThrow(attemptId, parentId);
+
+        Question question = questionRepository.findById(questionId);
+        if (question == null) {
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Question not found");
+        }
+        if (!QuestionType.SPEAKING.name().equals(question.getQuestionType())) {
+            throw new BusinessException(QuizErrorCode.QUESTION_NOT_SPEAKING_TYPE);
+        }
+
+        AttemptAnswer answer = attemptAnswerRepository.query()
+                .eq(AttemptAnswer::getAttemptId, attemptId)
+                .eq(AttemptAnswer::getQuestionId, questionId)
+                .one();
+        if (answer == null) {
+            // The student may have left this question entirely blank - #submit still creates a
+            // placeholder row for every question (see its javadoc), but guard here too in case
+            // that ever changes, so grading never NPEs on a genuinely missing row.
+            answer = new AttemptAnswer();
+            answer.setAttemptId(attemptId);
+            answer.setQuestionId(questionId);
+        }
+        answer.setParentMarkedCorrect(correct);
+        attemptAnswerRepository.save(answer);
+        logInfo("Speaking answer graded: attemptId={}, questionId={}, parentId={}, correct={}", attemptId, questionId, parentId, correct);
+    }
+
+    /** Loads the Attempt with id {@code attemptId}, throwing if it doesn't exist, its Test doesn't belong to {@code parentId}, or it has not been submitted yet - shared by {@link #getSpeakingAnswerAudio}/{@link #gradeSpeakingAnswer}. */
+    private Attempt getOwnedSubmittedAttemptOrThrow(Long attemptId, Long parentId) {
+        Attempt attempt = attemptRepository.findById(attemptId);
+        if (attempt == null) {
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Attempt not found");
+        }
+        testService.getOwnedOrThrow(attempt.getTestId(), parentId);
+        if (attempt.getSubmittedAt() == null) {
+            throw new BusinessException(QuizErrorCode.ATTEMPT_NOT_SUBMITTED);
+        }
+        return attempt;
     }
 }

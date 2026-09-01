@@ -3,9 +3,11 @@ package vn.org.thn.service.app.quiz.service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.AnswerItem;
 import vn.org.thn.service.app.quiz.dto.AnswerRequest;
 import vn.org.thn.service.app.quiz.dto.QuestionAudio;
+import vn.org.thn.service.app.quiz.dto.SpeakingAnswerAudio;
 import vn.org.thn.service.app.quiz.dto.StartAttemptResponse;
 import vn.org.thn.service.app.quiz.dto.StudentPracticeGenerateRequest;
 import vn.org.thn.service.app.quiz.dto.StudentQuestionResponse;
@@ -17,6 +19,7 @@ import vn.org.thn.service.app.quiz.entity.Attempt;
 import vn.org.thn.service.app.quiz.entity.AttemptAnswer;
 import vn.org.thn.service.app.quiz.entity.Choice;
 import vn.org.thn.service.app.quiz.entity.Question;
+import vn.org.thn.service.app.quiz.entity.QuestionType;
 import vn.org.thn.service.app.quiz.entity.Student;
 import vn.org.thn.service.app.quiz.entity.Subject;
 import vn.org.thn.service.app.quiz.entity.Test;
@@ -33,14 +36,19 @@ import vn.org.thn.service.app.quiz.repository.TestQuestionRepository;
 import vn.org.thn.service.app.quiz.repository.TestRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.base.IBase;
+import vn.org.thn.service.base.db.DatabasePath;
 import vn.org.thn.service.base.exception.BusinessException;
 import vn.org.thn.service.base.exception.CommonErrorCode;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -61,6 +69,24 @@ import java.util.stream.Collectors;
  */
 @Service
 public class StudentAttemptService extends IBase {
+
+    /** 10 MB app-level cap for a Student's recorded SPEAKING answer - same cap as {@code QuestionService#MAX_AUDIO_SIZE_BYTES} for a Question's own listening-prompt clip. */
+    private static final long MAX_SPEAKING_ANSWER_SIZE_BYTES = 10L * 1024 * 1024;
+
+    // "audio/webm" duoc them rieng vi trinh duyet (MediaRecorder API) khi Hoc sinh ghi am cau tra loi
+    // thuong tao ra dung dinh dang nay (Chrome/Firefox/Edge) - khong the doi sang mp3/wav/m4a ma
+    // khong transcode phia server, nen chap nhan luon webm nhu 1 dinh dang hop le.
+    private static final Map<String, String> ALLOWED_SPEAKING_ANSWER_TYPES = Map.of(
+            "audio/mpeg", "mp3",
+            "audio/mp4", "m4a",
+            "audio/wav", "wav",
+            "audio/x-wav", "wav",
+            "audio/ogg", "ogg",
+            "audio/webm", "webm"
+    );
+
+    /** Same folder-per-upload-kind layout as {@code QuestionService#AUDIO_DIR} - a Student's recorded answer is a different kind of file (own folder) even though it is the same audio formats. */
+    private static final Path SPEAKING_ANSWER_DIR = DatabasePath.HOME.resolve("uploads").resolve("speaking-answers");
 
     @Autowired
     private TestRepository testRepository;
@@ -158,7 +184,11 @@ public class StudentAttemptService extends IBase {
             attempt.setTestId(testId);
             attempt.setStudentId(studentId);
             attempt.setStartedAt(now);
-            attempt.setTotalQuestions(testQuestions.size());
+            // totalQuestions counts only auto-graded (MULTIPLE_CHOICE) questions, NOT every
+            // question on the test - a SPEAKING question is never part of the score denominator
+            // (task "Cau hoi dang tu luan/thu am", 2026-09-01: "khong tinh diem, chi de tham
+            // khao"), see #submit's matching recomputation and countScorableQuestions's javadoc.
+            attempt.setTotalQuestions((int) countScorableQuestions(testQuestions));
             attempt.setCreatedAt(now);
             attempt.setUpdatedAt(now);
             attempt.setCreatedBy("student:" + studentId);
@@ -223,16 +253,31 @@ public class StudentAttemptService extends IBase {
         }
 
         int correctCount = 0;
+        int scorableCount = 0;
         for (TestQuestion testQuestion : testQuestions) {
             Long questionId = testQuestion.getQuestionId();
+            Question question = questionRepository.findById(questionId);
             AttemptAnswer answer = answerByQuestionId.get(questionId);
             if (answer == null) {
-                // Never answered at all - still recorded as a blank/wrong AttemptAnswer row so
-                // task 7's report has one row per question, per the task 6 spec.
+                // Never answered at all - still recorded as a blank/wrong (or, for SPEAKING,
+                // simply blank) AttemptAnswer row so task 7's report has one row per question,
+                // per the task 6 spec.
                 answer = new AttemptAnswer();
                 answer.setAttemptId(attemptId);
                 answer.setQuestionId(questionId);
             }
+
+            if (question != null && QuestionType.SPEAKING.name().equals(question.getQuestionType())) {
+                // Never auto-graded and never counted toward correctCount/totalQuestions - see
+                // QuestionType's javadoc ("khong tinh diem, chi de tham khao"). correct/
+                // parentMarkedCorrect are left exactly as they already are (correct was always
+                // null for a SPEAKING row; parentMarkedCorrect cannot be set yet at this point,
+                // grading only opens up after submission - see ReportService#gradeSpeakingAnswer).
+                attemptAnswerRepository.save(answer);
+                continue;
+            }
+
+            scorableCount++;
             boolean isCorrect = false;
             if (answer.getChoiceId() != null) {
                 Choice chosen = choiceRepository.findById(answer.getChoiceId());
@@ -247,6 +292,10 @@ public class StudentAttemptService extends IBase {
 
         attempt.setSubmittedAt(LocalDateTime.now());
         attempt.setCorrectCount(correctCount);
+        // Recomputed here too (not just trusted from #start) so totalQuestions/correctCount can
+        // never disagree about which questions count, even though the test's own question set
+        // cannot actually change between start and submit in v1.
+        attempt.setTotalQuestions(scorableCount);
         attempt.setUpdatedAt(LocalDateTime.now());
         attempt.setUpdatedBy("student:" + studentId);
         attempt = attemptRepository.save(attempt);
@@ -260,6 +309,192 @@ public class StudentAttemptService extends IBase {
         logInfo("Attempt submitted: id={}, testId={}, studentId={}, correctCount={}, totalQuestions={}",
                 attempt.getId(), attempt.getTestId(), studentId, correctCount, attempt.getTotalQuestions());
         return SubmitAttemptResponse.from(attempt);
+    }
+
+    /**
+     * Uploads/replaces the Student's recorded voice answer for one SPEAKING question within an
+     * in-progress attempt - {@code POST
+     * /api/student/attempts/{attemptId}/questions/{questionId}/speaking-answer}. Same content-
+     * type/size validation shape as {@code QuestionService#uploadAudio}. Can be called again any
+     * number of times before submit to delete-and-redo the recording (the user's explicit answer
+     * when this feature was scoped: re-answer allowed "chi trong luc dang lam bai, truoc khi
+     * nop") - each call simply replaces whatever was recorded before.
+     */
+    @Transactional
+    public void uploadSpeakingAnswer(Long attemptId, Long questionId, MultipartFile file) {
+        Long studentId = CurrentUser.get().userId();
+        Attempt attempt = getOwnedAttemptOrThrow(attemptId, studentId);
+        if (attempt.getSubmittedAt() != null) {
+            throw new BusinessException(QuizErrorCode.ATTEMPT_ALREADY_SUBMITTED);
+        }
+        Question question = getSpeakingQuestionOfAttemptOrThrow(attempt, questionId);
+
+        String extension = ALLOWED_SPEAKING_ANSWER_TYPES.get(file.getContentType());
+        if (extension == null) {
+            throw new BusinessException(QuizErrorCode.SPEAKING_ANSWER_INVALID_TYPE);
+        }
+        if (file.getSize() > MAX_SPEAKING_ANSWER_SIZE_BYTES) {
+            throw new BusinessException(QuizErrorCode.SPEAKING_ANSWER_TOO_LARGE);
+        }
+
+        try {
+            Files.createDirectories(SPEAKING_ANSWER_DIR);
+        } catch (IOException e) {
+            logError("Could not create speaking answer directory " + SPEAKING_ANSWER_DIR, e);
+            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
+        }
+
+        AttemptAnswer answer = attemptAnswerRepository.query()
+                .eq(AttemptAnswer::getAttemptId, attemptId)
+                .eq(AttemptAnswer::getQuestionId, questionId)
+                .one();
+        if (answer == null) {
+            answer = new AttemptAnswer();
+            answer.setAttemptId(attemptId);
+            answer.setQuestionId(questionId);
+        }
+        String oldAudioPath = answer.getAnswerAudioPath();
+
+        String filename = "answer-" + attemptId + "-" + questionId + "-" + UUID.randomUUID() + "." + extension;
+        Path target = SPEAKING_ANSWER_DIR.resolve(filename);
+        try {
+            file.transferTo(target);
+        } catch (IOException e) {
+            logError("Could not save speaking answer to " + target, e);
+            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
+        }
+
+        answer.setAnswerAudioPath(filename);
+        attemptAnswerRepository.save(answer);
+
+        // Only removed AFTER the new file is safely written+saved, same "never leave a dangling
+        // reference on a mid-upload failure" reasoning as QuestionService#uploadAudio.
+        deleteSpeakingAnswerFileQuietly(oldAudioPath);
+
+        logInfo("Speaking answer uploaded: attemptId={}, questionId={}, studentId={}, filename={}",
+                attemptId, questionId, studentId, filename);
+    }
+
+    /**
+     * Clears the Student's recorded answer for one SPEAKING question so they can record again
+     * from a blank state - {@code DELETE
+     * /api/student/attempts/{attemptId}/questions/{questionId}/speaking-answer}. No-op if there
+     * was nothing recorded yet. Same "locked once submitted" rule as {@link
+     * #uploadSpeakingAnswer}.
+     */
+    @Transactional
+    public void deleteSpeakingAnswer(Long attemptId, Long questionId) {
+        Long studentId = CurrentUser.get().userId();
+        Attempt attempt = getOwnedAttemptOrThrow(attemptId, studentId);
+        if (attempt.getSubmittedAt() != null) {
+            throw new BusinessException(QuizErrorCode.ATTEMPT_ALREADY_SUBMITTED);
+        }
+        getSpeakingQuestionOfAttemptOrThrow(attempt, questionId);
+
+        AttemptAnswer answer = attemptAnswerRepository.query()
+                .eq(AttemptAnswer::getAttemptId, attemptId)
+                .eq(AttemptAnswer::getQuestionId, questionId)
+                .one();
+        if (answer == null || answer.getAnswerAudioPath() == null) {
+            return;
+        }
+        deleteSpeakingAnswerFileQuietly(answer.getAnswerAudioPath());
+        answer.setAnswerAudioPath(null);
+        attemptAnswerRepository.save(answer);
+        logInfo("Speaking answer deleted: attemptId={}, questionId={}, studentId={}", attemptId, questionId, studentId);
+    }
+
+    /**
+     * The Student's own playback of their recorded answer - {@code GET
+     * /api/student/attempts/{attemptId}/questions/{questionId}/speaking-answer}. Unlike upload/
+     * delete, this is NOT blocked by submission - a Student may want to listen back both while
+     * still answering and after submitting (same "read access survives submission" shape as
+     * {@code StudentLessonService}/the listening-question audio endpoint).
+     */
+    public SpeakingAnswerAudio getOwnSpeakingAnswerAudio(Long attemptId, Long questionId) {
+        Long studentId = CurrentUser.get().userId();
+        Attempt attempt = getOwnedAttemptOrThrow(attemptId, studentId);
+        getSpeakingQuestionOfAttemptOrThrow(attempt, questionId);
+
+        AttemptAnswer answer = attemptAnswerRepository.query()
+                .eq(AttemptAnswer::getAttemptId, attemptId)
+                .eq(AttemptAnswer::getQuestionId, questionId)
+                .one();
+        if (answer == null || answer.getAnswerAudioPath() == null) {
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "No speaking answer recorded yet");
+        }
+        return loadSpeakingAnswerAudio(answer);
+    }
+
+    /**
+     * Reads a recorded speaking answer's bytes off disk. Package-private + takes the already-
+     * resolved {@link AttemptAnswer} (no ownership check of its own) so {@code ReportService} can
+     * reuse it once it has independently proven, via its own Test-ownership check, that the
+     * current Parent may hear this answer - same reuse shape as {@code
+     * QuestionService#loadAudio}/{@code StudentAttemptService#getQuestionAudio}.
+     */
+    SpeakingAnswerAudio loadSpeakingAnswerAudio(AttemptAnswer answer) {
+        if (answer.getAnswerAudioPath() == null) {
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "No speaking answer recorded yet");
+        }
+        Path path = SPEAKING_ANSWER_DIR.resolve(answer.getAnswerAudioPath());
+        byte[] bytes;
+        try {
+            bytes = Files.readAllBytes(path);
+        } catch (IOException e) {
+            logError("Speaking answer file missing on disk: " + path, e);
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Speaking answer file not found");
+        }
+        return new SpeakingAnswerAudio(bytes, contentTypeForSpeakingAnswerFilename(answer.getAnswerAudioPath()), answer.getAnswerAudioPath());
+    }
+
+    private String contentTypeForSpeakingAnswerFilename(String filename) {
+        String ext = filename.substring(filename.lastIndexOf('.') + 1).toLowerCase();
+        return ALLOWED_SPEAKING_ANSWER_TYPES.entrySet().stream()
+                .filter(entry -> entry.getValue().equals(ext))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse("application/octet-stream");
+    }
+
+    /** Best-effort delete - a missing/already-gone file is not an error worth failing the caller's request over, same reasoning as every other upload's quiet-delete helper in this codebase. */
+    private void deleteSpeakingAnswerFileQuietly(String audioPath) {
+        if (audioPath == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(SPEAKING_ANSWER_DIR.resolve(audioPath));
+        } catch (IOException e) {
+            log().warn("Could not delete old speaking answer file {}: {}", audioPath, e.getMessage());
+        }
+    }
+
+    /** Loads {@code questionId}, throwing if it is not part of {@code attempt}'s test (INVALID_PARAMETER) or is not a SPEAKING question (QUESTION_NOT_SPEAKING_TYPE) - shared guard for every speaking-answer endpoint above. */
+    private Question getSpeakingQuestionOfAttemptOrThrow(Attempt attempt, Long questionId) {
+        boolean onThisTest = testQuestionRepository.query()
+                .eq(TestQuestion::getTestId, attempt.getTestId())
+                .eq(TestQuestion::getQuestionId, questionId)
+                .exists();
+        if (!onThisTest) {
+            throw new BusinessException(CommonErrorCode.INVALID_PARAMETER,
+                    "questionId " + questionId + " is not part of this attempt's test");
+        }
+        Question question = questionRepository.findById(questionId);
+        if (question == null) {
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Question not found");
+        }
+        if (!QuestionType.SPEAKING.name().equals(question.getQuestionType())) {
+            throw new BusinessException(QuizErrorCode.QUESTION_NOT_SPEAKING_TYPE);
+        }
+        return question;
+    }
+
+    /** Count of {@code testQuestions} whose Question is NOT a SPEAKING type - the score denominator (see {@link #start}/{@link #submit}), since a SPEAKING question is never auto-graded or counted toward the score, per {@link QuestionType}'s javadoc. */
+    private long countScorableQuestions(List<TestQuestion> testQuestions) {
+        return testQuestions.stream()
+                .map(tq -> questionRepository.findById(tq.getQuestionId()))
+                .filter(question -> question != null && !QuestionType.SPEAKING.name().equals(question.getQuestionType()))
+                .count();
     }
 
     /** Loads the Test with id {@code testId}, throwing if it doesn't exist or isn't assigned to {@code studentId}. */

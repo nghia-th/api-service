@@ -14,6 +14,20 @@ import vn.org.thn.service.base.db.mybatis.annotation.Table;
  * correct {@link Choice}) - not computed at answer-save time, per {@code
  * docs/dev/06-hoc-sinh-lam-bai.md}. No audit fields, same reasoning as {@link Choice}/{@link
  * TestQuestion}.
+ * <p>
+ * {@code answerAudioPath}/{@code parentMarkedCorrect} were added 2026-09-01 for the "speaking
+ * question" feature (see {@link vn.org.thn.service.app.quiz.entity.QuestionType}'s javadoc) -
+ * used INSTEAD of {@code choiceId} when this row's Question is a SPEAKING type ({@code choiceId}
+ * stays null for those rows; the two are mutually exclusive by construction, never validated as
+ * a DB constraint since MyBatis has no CHECK-constraint support in this codebase). {@code
+ * answerAudioPath} stores only the server-side filename of the Student's recorded answer (never
+ * the raw bytes), same "path in DB, bytes on disk" pattern as {@code Question.audioPath} - see
+ * {@code StudentAttemptService#uploadSpeakingAnswer}/{@code #loadSpeakingAnswerAudio}. {@code
+ * parentMarkedCorrect} is a tri-state reference note only the owning Parent sets ({@code
+ * ReportService#gradeSpeakingAnswer}, only callable after the Attempt is submitted) - null means
+ * "not reviewed yet"; unlike {@code correct}, it is NEVER read by any score computation ({@code
+ * Attempt.correctCount}/{@code scorePercent}), per the user's explicit "khong tinh diem, chi de
+ * tham khao" answer when this feature was scoped.
  */
 @Data
 @Entity
@@ -28,4 +42,10 @@ public class AttemptAnswer {
     private Long questionId;
     private Long choiceId;
     private Boolean correct;
+
+    /** Duong dan/ten file ghi am cau tra loi cua Hoc sinh cho cau hoi dang SPEAKING, null neu chua tra loi (hoac cau hoi nay la MULTIPLE_CHOICE). */
+    private String answerAudioPath;
+
+    /** Ghi chu doi chieu cua Phu huynh cho cau tra loi SPEAKING - null = chua cham, true/false = Phu huynh tu danh gia. Khong anh huong diem so tu dong. */
+    private Boolean parentMarkedCorrect;
 }
