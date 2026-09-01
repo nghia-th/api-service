@@ -40,6 +40,17 @@ dependencies {
 	implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
 	runtimeOnly 'io.jsonwebtoken:jjwt-gson:0.13.0'
+
+	// Question import (task 4) - reading uploaded .xlsx/.csv files with fixed columns (no OCR/AI,
+	// see docs/dev/04-ngan-hang-cau-hoi.md). Unlike springdoc above, these are actual runtime
+	// parsing libraries the app calls into, not just annotations - so 'implementation', not
+	// 'compileOnly', and unlike everything else in this file they are new to the whole codebase
+	// (base/api-service never needed file parsing), so there is no existing version to match.
+	// Versions confirmed via web search at the time of writing (2026-08-31) as the latest stable
+	// releases on Maven Central.
+	implementation 'org.apache.poi:poi-ooxml:5.5.1'
+	implementation 'org.apache.commons:commons-csv:1.14.1'
+
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter-test:4.0.1'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

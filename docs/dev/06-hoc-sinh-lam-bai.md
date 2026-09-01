@@ -32,3 +32,18 @@ Response: kết quả cơ bản cho Student — điểm số + câu đúng/sai (
 - Nộp bài 2 lần (`submit` gọi lại sau khi đã `submittedAt` khác null) → lỗi, không tính điểm lại.
 - Gửi `answers` sau khi đã `submit` → lỗi, không cho sửa đáp án bài đã nộp.
 - Student A không gọi được API trên `attemptId`/`testId` của Student B.
+
+
+## Trạng thái: ĐÃ CODE (task 6, code qua đêm - anh review lại)
+
+Code tại `api/src/main/java/vn/org/thn/service/app/quiz/{entity,repository,dto,service,api}` — `Attempt`/`AttemptAnswer` entity, `AttemptRepository`/`AttemptAnswerRepository`, `StudentTestSummaryResponse`/`StudentChoiceResponse` (**không có field `correct`** - điểm quan trọng nhất của task này)/`StudentQuestionResponse`/`StartAttemptResponse`/`AnswerItem`/`AnswerRequest`/`SubmitAttemptResponse`, `StudentAttemptService`, `StudentAttemptApi` (base path `/api/student`, tự động được `JwtAuthFilter` yêu cầu token role STUDENT nhờ prefix có sẵn từ task 1, không cần cấu hình gì thêm). Migration `database/<engine>/V6__attempt_attempt_answer.sql` (5 engine). Bổ sung `QuizErrorCode.QUIZ_010` (attempt đã nộp rồi).
+
+**Quyết định/giả định khi code:**
+
+- **`start` idempotent đúng theo spec**: query `Attempt` theo `testId` trước, có rồi thì trả lại, không tạo mới — đã kiểm tra kỹ response của `start` không map thẳng entity `Choice` (dùng `StudentChoiceResponse` riêng, chỉ có `choiceId`+`content`) — đúng cảnh báo "lỗi dễ mắc nhất" trong acceptance criteria.
+- **Câu chưa trả lời khi nộp bài**: vẫn tạo 1 dòng `AttemptAnswer` với `choiceId = null`, `correct = false` — để task 7 group theo tag không bị thiếu câu hỏi nào.
+- **Bổ sung ngoài spec (tự quyết, đề nghị anh xem lại)**: khi lưu answer (`POST .../answers`), thêm 2 check không có trong spec gốc: (1) `questionId` phải thuộc đúng `testId` của attempt, (2) `choiceId` phải thuộc đúng `questionId` đó — tránh học sinh gửi `choiceId` "mượn" từ câu khác (biết trước đáp án đúng của câu khác rồi gán bừa vào câu đang làm) để gian lận điểm. Trả lỗi `COMMON_002 INVALID_PARAMETER` nếu vi phạm. Đây là bổ sung an toàn dữ liệu hợp lý nhưng **không được spec yêu cầu tường minh, anh xem có cần không**.
+- **`submit` chỉ chạy 1 lần**: check `submittedAt != null` chặn ngay từ đầu (áp dụng chung cho cả `submit` và `POST answers`, đúng cả 2 acceptance criteria "nộp 2 lần" và "sửa đáp án sau khi nộp").
+- **`Test.status = COMPLETED`** set trong cùng transaction với `submit`, load entity `Test` có sẵn rồi sửa tại chỗ (không tạo object mới) — tránh đúng bug audit-field đã bắt được ở task 4.
+
+Lưu ý: không build/compile thử được — đã kiểm tra brace/paren balance, `git status` sạch.

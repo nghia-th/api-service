@@ -33,3 +33,17 @@ Rule: **chỉ cho xoá khi chưa có Attempt nào** (`status = ASSIGNED` và ch�
 - Tạo Test giao cho Student không thuộc Parent hiện tại → lỗi.
 - Test rỗng (`questionIds` rỗng) → lỗi, không tạo được bài kiểm tra không có câu hỏi nào.
 - Xoá Test đã có Attempt (kể cả đang làm dở, chưa nộp) → bị chặn.
+
+
+## Trạng thái: ĐÃ CODE (task 5, code qua đêm - anh review lại)
+
+Code tại `api/src/main/java/vn/org/thn/service/app/quiz/{entity,repository,dto,service,api}` — `Test`/`TestStatus`(enum)/`TestQuestion` entity, `TestRepository`/`TestQuestionRepository`, `TestCreateRequest` (dùng `List<@NotNull Long> questionIds`, không có DTO update — task 5 không có API sửa Test), `TestResponse` (summary) + `TestDetailResponse` (kèm danh sách `QuestionResponse` đúng thứ tự), `TestService`, `TestApi`. Migration `database/<engine>/V5__test_test_question.sql` (5 engine, đã tạo sớm cùng task 4 vì task 4's DELETE Question cần `TestQuestion`). Bổ sung `QuizErrorCode.QUIZ_009` (Test đã có Attempt, chặn xoá).
+
+**Quyết định/giả định khi code:**
+
+- **Tạo = giao luôn**: không có bước "giao" tách riêng, đúng theo spec — `status = ASSIGNED` ngay khi tạo.
+- **Check ownership từng `questionId` một** (không phải 1 query lớn) — tái dùng `QuestionService.getOwnedOrThrow` (đã đổi package-private) cho từng phần tử, giống cách `SubjectService`/`LessonService` đã làm — số lượng câu hỏi trong 1 bài kiểm tra nhỏ nên chấp nhận nhiều round-trip.
+- **DELETE chặn nếu đã có Attempt** — check `attemptRepository.query().eq(Attempt::getTestId, id).exists()`, đúng rule "kể cả đang làm dở, chưa nộp" (không lọc theo `submittedAt`).
+- **`TestService.getOwnedOrThrow` để package-private** — task 7 (`ReportService`) tái dùng để resolve ownership của 1 Attempt qua Test cha, giống pattern `Lesson`→`Subject` ở task 3.
+
+Lưu ý: không build/compile thử được — đã kiểm tra brace/paren balance, `git status` sạch.

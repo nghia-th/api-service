@@ -109,8 +109,8 @@ public class StudentService extends IBase {
         logInfo("Student deleted: id={}, parentId={}", student.getId(), parentId);
     }
 
-    /** Loads the Student with id {@code id}, throwing if it doesn't exist or doesn't belong to {@code parentId}. */
-    private Student getOwnedOrThrow(Long id, Long parentId) {
+    /** Loads the Student with id {@code id}, throwing if it doesn't exist or doesn't belong to {@code parentId}. Package-private (not private) so {@code TestService} (task 5) can reuse it, same pattern as {@code SubjectService#getOwnedOrThrow}. */
+    Student getOwnedOrThrow(Long id, Long parentId) {
         Student student = studentRepository.findById(id);
         if (student == null) {
             throw new BusinessException(CommonErrorCode.NOT_FOUND, "Student not found");

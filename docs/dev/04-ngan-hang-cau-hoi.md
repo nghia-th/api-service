@@ -92,3 +92,22 @@ Response:
 - Import file có 10 dòng, trong đó 2 dòng lỗi (ví dụ thiếu lựa chọn) → tạo đúng 8 Question, trả về `errors` ghi rõ dòng nào lỗi và vì sao, không fail toàn bộ file.
 - Import với `lessonId` không thuộc Parent hiện tại → lỗi ngay từ đầu, không đọc file.
 - Import file sai định dạng hoàn toàn (không parse được) → lỗi rõ ràng, không crash 500.
+
+
+## Trạng thái: ĐÃ CODE (task 4, code qua đêm - anh review lại)
+
+Code tại `api/src/main/java/vn/org/thn/service/app/quiz/{entity,repository,dto,service,api}` — `Question`/`Choice` entity, `QuestionRepository`/`ChoiceRepository`, `ChoiceRequest`+`QuestionRequest` (dùng chung create/update, giống `SubjectRequest`) + `ChoiceResponse`/`QuestionResponse`, `QuestionService` (nhập tay) + `QuestionImportService` (import file) + `QuestionApi` (7 endpoint: CRUD + `GET import-template` + `POST import`). Migration `database/<engine>/V4__question_choice.sql` (5 engine). Bổ sung `QuizErrorCode`: `QUIZ_007` (không đúng 1 choice correct), `QUIZ_008` (question đã dùng trong test), `QUIZ_011`/`QUIZ_012` (import quá nhiều dòng / file không đọc được).
+
+**Quyết định/giả định khi code:**
+
+- **1 choice correct**: check bằng code (đếm `correct=true` trong list, không phải Bean Validation single-field) vì rule phụ thuộc nhiều field cùng lúc — `QuestionService.validateExactlyOneCorrectChoice`.
+- **Update = full replace**: xoá hết `Choice` cũ rồi insert lại theo request mới, đúng theo gợi ý đơn giản nhất trong spec.
+- **DELETE Question chặn nếu đã dùng trong `TestQuestion`** — cần entity `TestQuestion` (task 5) nên đã tạo `TestQuestion`/`Test` entity + migration V5 sớm hơn dự kiến, cùng lúc với task 4, để rule này làm được đầy đủ ngay (không phải hoãn kiểu Lesson/Question ở task 2-3).
+- **Bug tự phát hiện và tự sửa trước khi ghi file**: bản nháp đầu của `QuestionService.update` xây `Question` mới hoàn toàn thay vì sửa object đã load — do `base`'s `InsertExecutor.save()` ở nhánh UPDATE ghi đè **toàn bộ** cột non-PK từ object được truyền vào, cách làm đó sẽ xoá mất `createdAt`/`createdBy` (set về NULL) mỗi lần update. Đã đọc kỹ `InsertExecutor.java` để xác nhận hành vi rồi sửa lại theo đúng pattern load-rồi-sửa-tại-chỗ đã dùng đúng ở `StudentService`/`SubjectService`/`LessonService` (task 2-3) trước khi ghi ra đĩa — không có Question nào bị lỗi này vì phát hiện trước khi chạy thật.
+- **Import Excel/CSV**: dùng Apache POI `poi-ooxml:5.5.1` + Commons CSV `commons-csv:1.14.1` (`implementation`, không phải `compileOnly` — khác springdoc vì đây là thư viện xử lý runtime thật, không phải chỉ đọc bằng annotation). Version xác nhận qua tìm kiếm web tại thời điểm code (2026-08-31) là bản mới nhất trên Maven Central — **anh nên double-check lại khi build vì không verify được bằng compile thật**.
+- **Dòng ví dụ trong file mẫu**: chọn cách "hệ thống tự bỏ qua" (1 trong 2 lựa chọn spec đưa ra) — đánh dấu bằng prefix cố định trong cột A (`"[VÍ DỤ - XOÁ DÒNG NÀY TRƯỚC KHI IMPORT THẬT] "`), import tự skip mọi dòng có prefix này bất kể phụ huynh có xoá hay không.
+- **Giới hạn 200 dòng/import**: giữ nguyên con số đề xuất trong spec — **đây vẫn là giả định, cần anh xác nhận lại số cụ thể** như spec đã ghi rõ.
+- **Ngôn ngữ**: đây là điểm khác với quy tắc chung — nội dung *sản phẩm* mà phụ huynh trực tiếp thấy/điền (header file mẫu, dòng ví dụ, message lỗi `reason` trong response import) viết **tiếng Việt có dấu**, vì: (1) spec gốc ghi rõ tên cột tiếng Việt cụ thể, (2) spec ghi rõ "reason là câu mô tả lỗi... bằng tiếng Việt", (3) sản phẩm "Hiểu Bài" hướng tới phụ huynh Việt Nam. Toàn bộ code xung quanh (biến, comment, Javadoc, `@Schema`/`@Operation`, log) vẫn tiếng Anh như quy tắc chung — có ghi rõ LANGUAGE NOTE ngay đầu `QuestionImportService.java` để giải thích ranh giới này. **Đây là quyết định tự đưa ra khi anh đang ngủ, mai anh xem lại có đồng ý không.**
+- **Validate choiceId/questionId khi lưu answer** — đây thuộc task 6, không phải task 4, nhưng liên quan tới `Choice`: đã thêm check `choiceId` phải thuộc đúng `questionId` khi Student lưu đáp án (task 6), tránh học sinh gian lận gửi `choiceId` đúng của câu khác.
+
+Lưu ý: không build/compile thử được (không có mạng) — đã kiểm tra brace/paren balance, `git status` chỉ có đúng file mới + các file sửa đã liệt kê ở tài liệu tổng hợp.

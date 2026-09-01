@@ -12,7 +12,7 @@ import vn.org.thn.service.base.exception.BusinessException;
  * This is deliberately a standalone helper over {@link RequestContextHolder}, not a {@code
  * BaseCtl} method like {@code getClientIp()} - it must be callable from the Service layer too
  * (every {@code *Service} method that touches Parent/Student-owned data calls this to filter its
- * query by {@code userId()}/role, per {@code docs/01-thiet-ke-tong-the.md} muc 3), and Services
+ * query by {@code userId()}/role, per {@code docs/01-thiet-ke-tong-the.md} section 3, auth), and Services
  * don't extend {@code BaseCtl}.
  */
 public record CurrentUser(Long userId, Role role) {

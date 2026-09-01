@@ -13,7 +13,7 @@ import vn.org.thn.service.base.entity.BaseEntity;
 /**
  * A parent account - the top-level tenant boundary in quiz-service: every Subject/Lesson/
  * Question/Test a parent owns must be filtered by {@code parentId} in every {@code *Service}
- * method (see {@code docs/01-thiet-ke-tong-the.md} muc 3).
+ * method (see {@code docs/01-thiet-ke-tong-the.md} section 3, auth).
  * <p>
  * {@code password} is a BCrypt hash, never the plaintext. {@code @ToString.Exclude} keeps it out
  * of log lines even by accident (e.g. an {@code IBase.logInfo(entity)} call), on top of the

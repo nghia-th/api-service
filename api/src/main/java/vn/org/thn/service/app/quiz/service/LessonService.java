@@ -19,13 +19,16 @@ import java.util.List;
  * Lesson CRUD for the currently logged-in Parent (task 3). {@code Lesson} has no {@code
  * parentId} of its own (see the entity's javadoc), so every ownership check here goes through
  * {@link SubjectService#getOwnedOrThrow} on the lesson's {@code subjectId} - reused (package-
- * private) rather than duplicating the "not found vs. forbidden" logic a second time.
+ * private) rather than duplicating the "not found vs. forbidden" logic a second time. This
+ * class's own {@code getOwnedOrThrow} is package-private for the same reason - task 4's {@code
+ * QuestionService} reuses it to resolve a Question's indirect owner through its Lesson.
  * <p>
- * {@code delete} does NOT yet block on {@code Question} children, unlike {@link
- * SubjectService#delete} blocking on Lesson children - {@code Question} doesn't exist yet (task
- * 4), so there is nothing to check. Hard delete for now, same v1 deferral already used for {@code
- * StudentService#delete} (task 2, confirmed with the user there) - revisit once task 4 adds
- * {@code Question}.
+ * {@code delete} does NOT block on {@code Question} children - task 4 added that check to {@code
+ * QuestionService#delete} instead (blocking a Question's own deletion when it is used in a
+ * {@code TestQuestion}), which is a different rule than "does this Lesson have any Question at
+ * all". Revisiting whether Lesson delete should also block on having Questions was intentionally
+ * left as-is (v1 hard delete, see task 3's decision #12) since the task 3 spec's concern - not
+ * losing a question bank silently - is now covered by Question's own delete guard.
  */
 @Service
 public class LessonService extends IBase {
@@ -87,8 +90,8 @@ public class LessonService extends IBase {
         logInfo("Lesson deleted: id={}, parentId={}", lesson.getId(), parentId);
     }
 
-    /** Loads the Lesson with id {@code id}, throwing if it doesn't exist or its Subject doesn't belong to {@code parentId}. */
-    private Lesson getOwnedOrThrow(Long id, Long parentId) {
+    /** Loads the Lesson with id {@code id}, throwing if it doesn't exist or its Subject doesn't belong to {@code parentId}. Package-private (not private) so {@code QuestionService} can reuse it - same reasoning as {@code SubjectService#getOwnedOrThrow}. */
+    Lesson getOwnedOrThrow(Long id, Long parentId) {
         Lesson lesson = lessonRepository.findById(id);
         if (lesson == null) {
             throw new BusinessException(CommonErrorCode.NOT_FOUND, "Lesson not found");
