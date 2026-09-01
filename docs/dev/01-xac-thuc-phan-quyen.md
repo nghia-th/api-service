@@ -51,3 +51,7 @@ Mọi `*Api.java` dưới `/api/parent/**`/`/api/student/**` (trừ 3 endpoint a
 - Gọi API `/api/parent/**` không kèm token → 401, không crash 500.
 - Gọi API `/api/parent/**` với token của Student → 401/403 (role không khớp).
 - Token hết hạn → 401 rõ ràng, không phải lỗi chung chung.
+
+## Review sáng 01/09 (trước khi làm UI)
+
+Review lại: hash mật khẩu (BCrypt) đúng, JWT claim/expiry/role-gating đúng, không lộ password ở đâu, không tái phạm bug audit-field-overwrite (task này không có API update nên không áp dụng), không còn tiếng Việt lẫn trong code. 2 điểm nhỏ ghi nhận nhưng không sửa (rủi ro thấp, không phải bug): (1) `JwtAuthFilter` chỉ bắt `JwtException`/`IllegalArgumentException`, nếu 1 token hợp lệ chữ ký nhưng thiếu claim `role` sẽ ném `NullPointerException` không bắt được — hiện tại không tạo được token như vậy nếu không biết secret nên rủi ro thấp; (2) secret JWT và password DB vẫn ở dạng plaintext trong `application.yaml` (đã biết từ trước, đã có comment "DEV ONLY" cho JWT secret) — cần thay bằng biến môi trường/secret manager trước khi deploy thật, không phải việc của review lần này.

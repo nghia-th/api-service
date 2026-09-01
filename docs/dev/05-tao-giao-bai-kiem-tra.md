@@ -47,3 +47,7 @@ Code tại `api/src/main/java/vn/org/thn/service/app/quiz/{entity,repository,dto
 - **`TestService.getOwnedOrThrow` để package-private** — task 7 (`ReportService`) tái dùng để resolve ownership của 1 Attempt qua Test cha, giống pattern `Lesson`→`Subject` ở task 3.
 
 Lưu ý: không build/compile thử được — đã kiểm tra brace/paren balance, `git status` sạch.
+
+## Review sáng 01/09 (trước khi làm UI)
+
+Review lại: `TestService.create()` check ownership cả `studentId` lẫn từng `questionId`, `delete()` chặn đúng khi đã có Attempt (kể cả chưa nộp), không tái phạm bug audit-field-overwrite, `Bean Validation` trên `questionIds` (`List<@NotNull Long>` + `@NotEmpty`) đúng cú pháp Jakarta Validation. Đã dọn 1 import thừa không dùng (`JwtAuthFilter`) trong `TestApi.java` — chỉ là dọn code, không phải bug. Không tìm thấy bug nào khác.

@@ -42,3 +42,11 @@ Các quyết định/giả định khi code:
 - Validate + OpenAPI: cùng chuẩn Task 1/2 — `@Valid`/`@NotBlank`/`@NotNull` trên DTO, `@Tag`/`@Operation`/`@ApiResponses` tiếng Anh trên 2 controller.
 
 Lưu ý: session code này không có mạng ở máy — **chưa build/compile thử được**; đã kiểm tra brace/paren balance từng file OK, grep xác nhận không còn ký tự tiếng Việt trong code, `git status` chỉ có đúng các file mới + 1 file sửa (`QuizErrorCode.java`, thêm 2 mã lỗi). Anh cần tự chạy `./gradlew :api:compileJava` để xác nhận trước khi merge.
+
+## Review sáng 01/09 (trước khi làm UI)
+
+Review lại toàn bộ task 1-7 theo yêu cầu "xem lại tất cả rồi test lại hết trước khi làm UI". Không có mạng nên vẫn không compile/test thật được — review bằng đọc code kỹ (đối chiếu với `base`'s `InsertExecutor`, đối chiếu spec) qua nhiều agent con độc lập.
+
+**Tìm ra 1 bug thật ở task này và đã sửa:** `LessonService.delete()` chưa từng check `QuizErrorCode.LESSON_HAS_QUESTIONS` (QUIZ_006) dù mã lỗi này đã định nghĩa sẵn từ task 3 — task 4 tạo xong `Question` nhưng phần "bổ sung check" ghi trong quyết định ở trên đã bị bỏ sót, không làm. Hậu quả thật (không phải giả định): FK `fk_question_lesson` trong migration **không có `ON DELETE CASCADE`**, nên xoá 1 Lesson còn Question sẽ bị DB tự chặn bằng lỗi constraint-violation — nhưng lỗi đó rơi vào handler 500 chung chung (`COMMON_999`) thay vì lỗi rõ ràng 409 như các rule chặn-xoá khác trong hệ thống. Đã sửa: thêm check `questionRepository...exists()` giống hệt pattern `QUIZ_005` ở `SubjectService.delete()`, cập nhật lại Javadoc/`@Operation` đã lỗi thời ở `LessonService`/`LessonApi`/`QuizErrorCode` (trước đó có đoạn giải thích sai rằng rule này "không cần" vì đã có `QUESTION_USED_IN_TEST` che — thực ra 2 rule bảo vệ 2 tình huống khác nhau).
+
+Ngoài bug trên, review không phát hiện gì khác ở task 3: ownership Subject/Lesson đúng, `QUIZ_005` đúng, không tái phạm bug audit-field-overwrite, không còn tiếng Việt lẫn trong code.

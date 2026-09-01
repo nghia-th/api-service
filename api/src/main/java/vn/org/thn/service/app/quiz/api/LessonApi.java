@@ -103,12 +103,13 @@ public class LessonApi extends BaseCtl {
 
     @Operation(
             summary = "Delete a lesson",
-            description = "Hard delete in v1 - Question entities do not exist yet, so there is no question bank to worry about losing. Only the owning Parent (via the Lesson's Subject) can delete it."
+            description = "Blocked if the lesson still has questions - delete those first (QUIZ_006). Only the owning Parent (via the Lesson's Subject) can delete it."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted successfully - no response body"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This lesson does not belong to the current parent - COMMON_004 FORBIDDEN"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No lesson with this id - COMMON_005 NOT_FOUND")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No lesson with this id - COMMON_005 NOT_FOUND"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Lesson still has questions - QUIZ_006 LESSON_HAS_QUESTIONS")
     })
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> delete(@Parameter(description = "Lesson id") @PathVariable Long id) {

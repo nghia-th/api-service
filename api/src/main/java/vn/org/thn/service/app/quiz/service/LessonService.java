@@ -6,7 +6,10 @@ import vn.org.thn.service.app.quiz.dto.LessonCreateRequest;
 import vn.org.thn.service.app.quiz.dto.LessonResponse;
 import vn.org.thn.service.app.quiz.dto.LessonUpdateRequest;
 import vn.org.thn.service.app.quiz.entity.Lesson;
+import vn.org.thn.service.app.quiz.entity.Question;
+import vn.org.thn.service.app.quiz.exception.QuizErrorCode;
 import vn.org.thn.service.app.quiz.repository.LessonRepository;
+import vn.org.thn.service.app.quiz.repository.QuestionRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.base.IBase;
 import vn.org.thn.service.base.exception.BusinessException;
@@ -23,12 +26,14 @@ import java.util.List;
  * class's own {@code getOwnedOrThrow} is package-private for the same reason - task 4's {@code
  * QuestionService} reuses it to resolve a Question's indirect owner through its Lesson.
  * <p>
- * {@code delete} does NOT block on {@code Question} children - task 4 added that check to {@code
- * QuestionService#delete} instead (blocking a Question's own deletion when it is used in a
- * {@code TestQuestion}), which is a different rule than "does this Lesson have any Question at
- * all". Revisiting whether Lesson delete should also block on having Questions was intentionally
- * left as-is (v1 hard delete, see task 3's decision #12) since the task 3 spec's concern - not
- * losing a question bank silently - is now covered by Question's own delete guard.
+ * {@code delete} blocks on {@code Question} children via {@code QuizErrorCode#LESSON_HAS_QUESTIONS}
+ * (QUIZ_006) - this was deferred in task 3 (see that task's decision #12) because {@code Question}
+ * did not exist yet, then wired up here once task 4 introduced it. This is a different rule than
+ * {@code QuestionService#delete}'s own guard (blocking a Question's deletion when it is used in a
+ * {@code TestQuestion}): that one protects a Question already assigned to a Test; this one protects
+ * a whole Lesson's question bank from being silently deleted (and orphaning it, or - since the DB
+ * FK has no ON DELETE CASCADE - simply failing the DELETE with a raw constraint-violation 500)
+ * when it still has Questions.
  */
 @Service
 public class LessonService extends IBase {
@@ -38,6 +43,9 @@ public class LessonService extends IBase {
 
     @Autowired
     private SubjectService subjectService;
+
+    @Autowired
+    private QuestionRepository questionRepository;
 
     public LessonResponse create(LessonCreateRequest request) {
         Long parentId = CurrentUser.get().userId();
@@ -86,6 +94,9 @@ public class LessonService extends IBase {
         Long parentId = CurrentUser.get().userId();
         Lesson lesson = getOwnedOrThrow(id, parentId);
 
+        if (questionRepository.query().eq(Question::getLessonId, lesson.getId()).exists()) {
+            throw new BusinessException(QuizErrorCode.LESSON_HAS_QUESTIONS);
+        }
         lessonRepository.deleteById(lesson.getId());
         logInfo("Lesson deleted: id={}, parentId={}", lesson.getId(), parentId);
     }

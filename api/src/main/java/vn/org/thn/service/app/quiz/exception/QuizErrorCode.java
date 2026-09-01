@@ -13,8 +13,11 @@ import vn.org.thn.service.base.exception.ErrorCode;
  * "forbidden" is a generic concept, not specific to this service.
  * <p>
  * {@code USERNAME_TAKEN} was added in task 1, for task 2's "create student" endpoint to reuse.
- * {@code LESSON_HAS_QUESTIONS} was added in task 3, for task 4's "delete question" endpoint to
- * reuse (task 3 itself could not enforce it yet - {@code Question} did not exist at the time).
+ * {@code LESSON_HAS_QUESTIONS} was defined in task 3 for Lesson's own "delete" endpoint, but
+ * could not be wired up yet since {@code Question} did not exist at the time; it was connected
+ * in {@code LessonService#delete} once task 4 introduced {@code Question} (see that class's
+ * javadoc). Do not confuse it with {@code QUESTION_USED_IN_TEST} (QUIZ_008), which is a
+ * different rule guarding Question's own delete endpoint instead.
  */
 public enum QuizErrorCode implements ErrorCode {
 

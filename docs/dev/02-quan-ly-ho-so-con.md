@@ -48,3 +48,7 @@ Các quyết định/giả định khi code:
 - `createdBy`/`updatedBy` lưu dạng `"parent:" + parentId"` (theo đúng convention `role:id` đã dùng ở task 1 cho `Parent.createdBy = email`, ở đây Student không có "tên đăng nhập ở dạng liên hệ" như email nên dùng parentId).
 
 Lưu ý: session code này không có mạng ở máy — **chưa build/compile thử được**, anh Nghĩa cần tự chạy `./gradlew :api:compileJava` (hoặc build IDE) để xác nhận trước khi merge.
+
+## Review sáng 01/09 (trước khi làm UI)
+
+Review lại: `StudentService.update()` đúng pattern load-rồi-sửa-tại-chỗ (không tái phạm bug audit-field-overwrite), ownership check đầy đủ ở mọi entry point (create/get/update/delete/list), validate + unique username đúng, không còn tiếng Việt lẫn trong code. Không tìm thấy bug nào khác.

@@ -75,6 +75,18 @@ public class QuestionImportService extends IBase {
     @Autowired
     private QuestionService questionService;
 
+    /**
+     * One parsed data/header row plus the row number a Parent would actually see if they opened
+     * the file themselves (Excel's own 1-based row numbers for xlsx; 1-based line numbers for
+     * csv) - NOT the row's position in the returned list, which can diverge from it whenever a
+     * physical row/line is absent from what the library hands back (POI's row iterator skips
+     * rows that were never created in the sheet; Commons CSV skips blank lines by default). Using
+     * the list position for {@link ImportRowError#getRowNumber()} was the original (buggy)
+     * approach - it silently pointed a Parent at the wrong row whenever such a gap existed.
+     */
+    private record ParsedRow(int rowNumber, String[] cells) {
+    }
+
     /** Builds the downloadable template file - "xlsx" (default) or "csv", see {@code format} in the task 4 spec. */
     public TemplateFile generateTemplate(String format) {
         if ("csv".equalsIgnoreCase(format)) {
@@ -93,18 +105,21 @@ public class QuestionImportService extends IBase {
         Long parentId = CurrentUser.get().userId();
         lessonService.getOwnedOrThrow(lessonId, parentId);
 
-        List<String[]> rows = readRows(file);
-        // Row 0 is the header; data rows start at index 1, 1-based rowNumber (including header)
-        // starts at 2 for the first data row - see ImportRowError#getRowNumber's javadoc.
+        List<ParsedRow> rows = readRows(file);
+        // rows.get(0) is the header (row 1 as the Parent would see it in Excel); data rows are
+        // everything after it. Each row's own ParsedRow#rowNumber is used for
+        // ImportRowError#getRowNumber (not its position in this list - see ParsedRow's javadoc),
+        // so a gap in the source file (a deleted Excel row, a blank CSV line) can't desync the
+        // reported row number from the row the Parent actually needs to fix.
         List<String[]> dataRows = new ArrayList<>();
         List<Integer> dataRowNumbers = new ArrayList<>();
         for (int i = 1; i < rows.size(); i++) {
-            String[] row = rows.get(i);
-            if (isBlankRow(row) || isExampleRow(row)) {
+            ParsedRow row = rows.get(i);
+            if (isBlankRow(row.cells()) || isExampleRow(row.cells())) {
                 continue;
             }
-            dataRows.add(row);
-            dataRowNumbers.add(i + 1);
+            dataRows.add(row.cells());
+            dataRowNumbers.add(row.rowNumber());
         }
 
         if (dataRows.size() > MAX_ROWS) {
@@ -198,7 +213,7 @@ public class QuestionImportService extends IBase {
     }
 
     /** Reads every row of {@code file} (including the header) as fixed-width 7-column string arrays, dispatching on the original filename's extension. */
-    private List<String[]> readRows(MultipartFile file) {
+    private List<ParsedRow> readRows(MultipartFile file) {
         String filename = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase();
         try {
             if (filename.endsWith(".csv")) {
@@ -219,8 +234,8 @@ public class QuestionImportService extends IBase {
         }
     }
 
-    private List<String[]> readXlsxRows(InputStream inputStream) throws IOException {
-        List<String[]> rows = new ArrayList<>();
+    private List<ParsedRow> readXlsxRows(InputStream inputStream) throws IOException {
+        List<ParsedRow> rows = new ArrayList<>();
         DataFormatter formatter = new DataFormatter();
         try (XSSFWorkbook workbook = new XSSFWorkbook(inputStream)) {
             Sheet sheet = workbook.getSheetAt(0);
@@ -230,7 +245,8 @@ public class QuestionImportService extends IBase {
                     Cell cell = row.getCell(col);
                     cells[col] = cell == null ? "" : formatter.formatCellValue(cell).trim();
                 }
-                rows.add(cells);
+                // getRowNum() is 0-based; +1 matches the row number Excel itself displays.
+                rows.add(new ParsedRow(row.getRowNum() + 1, cells));
             }
         }
         if (rows.isEmpty()) {
@@ -239,15 +255,23 @@ public class QuestionImportService extends IBase {
         return rows;
     }
 
-    private List<String[]> readCsvRows(InputStream inputStream) throws IOException {
-        List<String[]> rows = new ArrayList<>();
-        try (CSVParser parser = CSVFormat.DEFAULT.parse(new java.io.InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+    private List<ParsedRow> readCsvRows(InputStream inputStream) throws IOException {
+        List<ParsedRow> rows = new ArrayList<>();
+        // CSVFormat.DEFAULT silently skips blank lines (ignoreEmptyLines=true), which would desync
+        // CSVRecord#getRecordNumber() from the line the Parent actually sees in their file the
+        // moment a blank line appears before a data row - turn that off so every physical line
+        // (blank or not) becomes one record and the two stay aligned; isBlankRow(...) in
+        // importFile still filters the resulting blank records out same as before.
+        CSVFormat format = CSVFormat.DEFAULT.builder().setIgnoreEmptyLines(false).build();
+        try (CSVParser parser = format.parse(new java.io.InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
             for (org.apache.commons.csv.CSVRecord record : parser) {
                 String[] cells = new String[7];
                 for (int col = 0; col < 7; col++) {
                     cells[col] = col < record.size() ? record.get(col).trim() : "";
                 }
-                rows.add(cells);
+                // getRecordNumber() is 1-based and, with ignoreEmptyLines off, tracks the file's
+                // own line numbers exactly - same convention as the +1 used for xlsx above.
+                rows.add(new ParsedRow((int) record.getRecordNumber(), cells));
             }
         }
         if (rows.isEmpty()) {

@@ -53,3 +53,7 @@ Code tại `api/src/main/java/vn/org/thn/service/app/quiz/{dto,service,api}` —
 - **Filter Test theo cả `studentId` VÀ `parentId`** (không chỉ `studentId`) khi tính lịch sử — phòng thủ thêm để không lộ dữ liệu nếu có bất nhất dữ liệu ở đâu đó, dù về lý thuyết `Test.parentId` luôn khớp `Student.parentId` do `TestService.create` đã check `studentId` ownership lúc tạo.
 
 Lưu ý: không build/compile thử được — đã kiểm tra brace/paren balance, `git status` sạch. **Đây là task cuối cùng trong phạm vi MVP v1 đã lên kế hoạch (task 1-7) — toàn bộ luồng chính (đăng ký/đăng nhập → quản lý con → môn học/bài học → ngân hàng câu hỏi → tạo/giao bài → học sinh làm bài → xem kết quả theo tag kiến thức) đã có code, chưa build/test thật.**
+
+## Review sáng 01/09 (trước khi làm UI)
+
+Review lại: ownership `getAttemptReport` đúng (qua `TestService.getOwnedOrThrow`), chặn đúng khi Attempt chưa nộp (`QUIZ_013`), sắp xếp theo `orderIndex` đúng, nhãn "Chưa phân loại" đúng chuỗi/dấu, `getStudentAttemptHistory` lọc đúng cả `studentId` lẫn `parentId` và chỉ lấy Attempt đã nộp như đã ghi trong Javadoc. `ReportService` hoàn toàn read-only (không gọi `save()` ở đâu) nên không áp dụng bug audit-field-overwrite. Không tìm thấy bug nào khác — đây là task duy nhất trong 7 task không phát hiện gì cần sửa.

@@ -111,3 +111,11 @@ Code tại `api/src/main/java/vn/org/thn/service/app/quiz/{entity,repository,dto
 - **Validate choiceId/questionId khi lưu answer** — đây thuộc task 6, không phải task 4, nhưng liên quan tới `Choice`: đã thêm check `choiceId` phải thuộc đúng `questionId` khi Student lưu đáp án (task 6), tránh học sinh gian lận gửi `choiceId` đúng của câu khác.
 
 Lưu ý: không build/compile thử được (không có mạng) — đã kiểm tra brace/paren balance, `git status` chỉ có đúng file mới + các file sửa đã liệt kê ở tài liệu tổng hợp.
+
+## Review sáng 01/09 (trước khi làm UI)
+
+**Tìm ra 1 lỗi (mức trung bình) và đã sửa:** `rowNumber` trong `ImportRowError` trước đây tính theo **vị trí trong list** kết quả đọc file, không phải số dòng thật trong file. 2 trường hợp làm 2 con số này lệch nhau: (1) file xlsx có dòng bị xoá để lại "khoảng trống" trong sheet — POI's row iterator bỏ qua hẳn dòng không tồn tại thay vì trả về dòng rỗng; (2) `CSVFormat.DEFAULT` mặc định tự bỏ qua dòng trống (`ignoreEmptyLines=true`), nên 1 dòng trống thật trong file csv cũng biến mất khỏi kết quả đọc. Cả 2 trường hợp đều khiến `rowNumber` báo sai dòng, phụ huynh mở file lên sửa sai chỗ. Đã sửa bằng cách đọc số dòng/thứ tự thật của POI (`row.getRowNum()+1`) và Commons CSV (`record.getRecordNumber()`, sau khi tắt `ignoreEmptyLines`) thay vì đếm theo vị trí list — xem `QuestionImportService.ParsedRow`.
+
+**Lưu ý cần anh double-check khi build:** phần tắt `ignoreEmptyLines` dùng `CSVFormat.DEFAULT.builder().setIgnoreEmptyLines(false).build()` — đây là API của Commons CSV mà em không verify được bằng compile thật (không có mạng), tin cậy ở mức khá cao vì đây là cách dùng phổ biến, quen thuộc của `CSVFormat.Builder` từ bản 1.9.0 trở đi, nhưng đây là chỗ rủi ro nhất trong toàn bộ đợt review này nếu có lỗi biên dịch — anh chạy `./gradlew :api:compileJava` xong báo lại giúp em nếu dòng này lỗi.
+
+Ngoài 2 điểm trên, review không phát hiện bug nào khác: không tái phạm audit-field-overwrite, `QUIZ_007`/`QUIZ_008`/`QUIZ_011`/`QUIZ_012` đều đúng, ownership đúng, resource (Workbook/CSVParser) đều đóng đúng chỗ, các API POI/commons-csv còn lại dùng đúng chữ ký ổn định lâu năm của 2 thư viện, không thấy dấu hiệu lỗi biên dịch.

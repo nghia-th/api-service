@@ -47,3 +47,7 @@ Code tại `api/src/main/java/vn/org/thn/service/app/quiz/{entity,repository,dto
 - **`Test.status = COMPLETED`** set trong cùng transaction với `submit`, load entity `Test` có sẵn rồi sửa tại chỗ (không tạo object mới) — tránh đúng bug audit-field đã bắt được ở task 4.
 
 Lưu ý: không build/compile thử được — đã kiểm tra brace/paren balance, `git status` sạch.
+
+## Review sáng 01/09 (trước khi làm UI)
+
+Review lại kỹ nhất ở đây vì đây là phần rủi ro cao nhất (dữ liệu học sinh thấy trực tiếp): xác nhận `StudentChoiceResponse` không có field `correct` và không có đường nào từ `/api/student/**` trả về `ChoiceResponse` (bản dành cho Parent, có `correct`) — học sinh không thể thấy đáp án đúng trước khi nộp bài. `start()` idempotent đúng (query trước, không tạo Attempt trùng). 2 check chống gian lận ở `saveAnswers()` (questionId thuộc đúng test, choiceId thuộc đúng questionId) đều có và đúng phạm vi. `submit()` chấm đúng cả câu chưa trả lời, chặn nộp 2 lần, set `Test.status=COMPLETED` bằng cách load-sửa-tại-chỗ (không tái phạm bug audit-field-overwrite). Không tìm thấy lỗ hổng ownership nào (mọi chỗ đều lấy id từ `CurrentUser`/JWT, không tin id truyền từ client). Không tìm thấy bug nào khác.
