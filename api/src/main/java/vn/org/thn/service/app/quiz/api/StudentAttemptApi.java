@@ -24,6 +24,7 @@ import vn.org.thn.service.app.quiz.dto.QuestionAudio;
 import vn.org.thn.service.app.quiz.dto.SpeakingAnswerAudio;
 import vn.org.thn.service.app.quiz.dto.SpeakingTextAnswerRequest;
 import vn.org.thn.service.app.quiz.dto.StartAttemptResponse;
+import vn.org.thn.service.app.quiz.dto.StudentAttemptReportResponse;
 import vn.org.thn.service.app.quiz.dto.StudentPracticeGenerateRequest;
 import vn.org.thn.service.app.quiz.dto.StudentTestSummaryResponse;
 import vn.org.thn.service.app.quiz.dto.SubjectResponse;
@@ -60,6 +61,21 @@ public class StudentAttemptApi extends BaseCtl {
     @GetMapping("/tests")
     public ResponseEntity<ApiResponse<List<StudentTestSummaryResponse>>> listTests() {
         return ok(studentAttemptService.listTests());
+    }
+
+    @Operation(
+            summary = "Get my own answers for a completed test (xem lai dap an)",
+            description = "Per-question detail (my answer vs. the correct answer) plus a breakdown by knowledge tag - same shape as the Parent's report (task 7), but scoped to my own attempt and without the Parent's private reference-answer note. Only reachable once I have submitted this test."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns my full answer review for this test"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This test is not assigned to the current student - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No test with this id, or I have not started it yet - COMMON_005 NOT_FOUND"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "I have not submitted this test yet - QUIZ_013 ATTEMPT_NOT_SUBMITTED")
+    })
+    @GetMapping("/tests/{testId}/answers")
+    public ResponseEntity<ApiResponse<StudentAttemptReportResponse>> getOwnAttemptReport(@Parameter(description = "Test id") @PathVariable Long testId) {
+        return ok(studentAttemptService.getOwnAttemptReport(testId));
     }
 
     @Operation(

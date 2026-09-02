@@ -9,6 +9,9 @@ import vn.org.thn.service.app.quiz.dto.AnswerRequest;
 import vn.org.thn.service.app.quiz.dto.QuestionAudio;
 import vn.org.thn.service.app.quiz.dto.SpeakingAnswerAudio;
 import vn.org.thn.service.app.quiz.dto.StartAttemptResponse;
+import vn.org.thn.service.app.quiz.dto.KnowledgeTagBreakdown;
+import vn.org.thn.service.app.quiz.dto.StudentAttemptAnswerDetail;
+import vn.org.thn.service.app.quiz.dto.StudentAttemptReportResponse;
 import vn.org.thn.service.app.quiz.dto.StudentPracticeGenerateRequest;
 import vn.org.thn.service.app.quiz.dto.StudentQuestionResponse;
 import vn.org.thn.service.app.quiz.dto.StudentTestSummaryResponse;
@@ -44,7 +47,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -123,6 +128,111 @@ public class StudentAttemptService extends IBase {
         Long studentId = CurrentUser.get().userId();
         return testRepository.query().eq(Test::getStudentId, studentId).list().stream()
                 .map(StudentTestSummaryResponse::from).toList();
+    }
+
+    /**
+     * The current Student's own read-only review of one already-submitted attempt - {@code GET
+     * /api/student/tests/{testId}/answers} (added 2026-09-02, per the user's explicit request:
+     * "xem lai dap an nhung de da lam"). Mirrors {@code ReportService#getAttemptReport} (task 7,
+     * Parent-facing) almost exactly - same per-question loop, same {@code
+     * QUIZ_013 ATTEMPT_NOT_SUBMITTED} gate - but scoped to the CURRENT student's own Test (never
+     * trusts an attemptId directly, resolves via testId + {@link #getOwnedTestOrThrow}, the same
+     * ownership shape {@link #start} already uses) and mapped onto {@link
+     * StudentAttemptAnswerDetail} instead of the Parent's {@code AttemptAnswerDetail} - that
+     * mapping deliberately drops {@code Question#referenceAnswer} (the Parent's own private note,
+     * never meant for the Student, see that DTO's javadoc). Only reachable once the attempt has
+     * been submitted - revealing the correct answer mid-attempt would defeat the entire point of
+     * {@link StudentChoiceResponse} never carrying {@code correct}.
+     */
+    public StudentAttemptReportResponse getOwnAttemptReport(Long testId) {
+        Long studentId = CurrentUser.get().userId();
+        Test test = getOwnedTestOrThrow(testId, studentId);
+
+        Attempt attempt = attemptRepository.query().eq(Attempt::getTestId, testId).one();
+        if (attempt == null) {
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "No attempt for this test yet");
+        }
+        // Defense in depth (Attempt.studentId should always match Test.studentId already checked
+        // by getOwnedTestOrThrow above) - same "check both, never trust one implies the other"
+        // caution ReportService#getStudentAttemptHistory already applies to Test/Parent.
+        if (!attempt.getStudentId().equals(studentId)) {
+            throw new BusinessException(CommonErrorCode.FORBIDDEN, "This attempt does not belong to the current student");
+        }
+        if (attempt.getSubmittedAt() == null) {
+            throw new BusinessException(QuizErrorCode.ATTEMPT_NOT_SUBMITTED);
+        }
+
+        List<TestQuestion> testQuestions = testQuestionRepository.query().eq(TestQuestion::getTestId, testId).list();
+        testQuestions.sort((a, b) -> Integer.compare(a.getOrderIndex(), b.getOrderIndex()));
+
+        Map<Long, AttemptAnswer> answerByQuestionId = attemptAnswerRepository.query()
+                .eq(AttemptAnswer::getAttemptId, attempt.getId()).list().stream()
+                .collect(Collectors.toMap(AttemptAnswer::getQuestionId, answer -> answer));
+
+        List<StudentAttemptAnswerDetail> details = new ArrayList<>();
+        // LinkedHashMap so byKnowledgeTag comes out in the order tags first appear, same reasoning
+        // as ReportService#getAttemptReport's tagStats.
+        Map<String, int[]> tagStats = new LinkedHashMap<>();
+
+        for (TestQuestion testQuestion : testQuestions) {
+            Question question = questionRepository.findById(testQuestion.getQuestionId());
+            AttemptAnswer answer = answerByQuestionId.get(testQuestion.getQuestionId());
+            Choice chosenChoice = (answer != null && answer.getChoiceId() != null)
+                    ? choiceRepository.findById(answer.getChoiceId())
+                    : null;
+            Choice correctChoice = choiceRepository.query()
+                    .eq(Choice::getQuestionId, question.getId())
+                    .eq(Choice::getCorrect, true)
+                    .one();
+            boolean correct = answer != null && Boolean.TRUE.equals(answer.getCorrect());
+            String tag = (question.getKnowledgeTag() == null || question.getKnowledgeTag().isBlank())
+                    ? "Chưa phân loại"
+                    : question.getKnowledgeTag();
+
+            String questionType = question.getQuestionType() == null ? QuestionType.MULTIPLE_CHOICE.name() : question.getQuestionType();
+            boolean hasSpeakingAnswer = answer != null && answer.getAnswerAudioPath() != null;
+            Boolean parentMarkedCorrect = answer == null ? null : answer.getParentMarkedCorrect();
+            String answerText = answer == null ? null : answer.getAnswerText();
+            String answerMode = question.getAnswerMode();
+
+            details.add(new StudentAttemptAnswerDetail(
+                    question.getId(),
+                    question.getContent(),
+                    chosenChoice == null ? null : chosenChoice.getContent(),
+                    correctChoice == null ? null : correctChoice.getContent(),
+                    correct,
+                    tag,
+                    questionType,
+                    hasSpeakingAnswer,
+                    parentMarkedCorrect,
+                    answerText,
+                    answerMode));
+
+            int[] stat = tagStats.computeIfAbsent(tag, key -> new int[2]);
+            stat[1]++;
+            if (correct) {
+                stat[0]++;
+            }
+        }
+
+        List<KnowledgeTagBreakdown> byKnowledgeTag = tagStats.entrySet().stream()
+                .map(entry -> new KnowledgeTagBreakdown(entry.getKey(), entry.getValue()[0], entry.getValue()[1]))
+                .toList();
+
+        double scorePercent = (attempt.getTotalQuestions() == null || attempt.getTotalQuestions() == 0)
+                ? 0.0
+                : attempt.getCorrectCount() * 100.0 / attempt.getTotalQuestions();
+
+        return new StudentAttemptReportResponse(
+                attempt.getId(),
+                test.getName(),
+                test.getTestType(),
+                attempt.getCorrectCount(),
+                attempt.getTotalQuestions(),
+                scorePercent,
+                attempt.getSubmittedAt(),
+                details,
+                byKnowledgeTag);
     }
 
     /** Every Subject in the current Student's own Classroom - populates the "chọn Môn" dropdown for {@link #generatePractice}, the Student never picks a Classroom (they only ever have the one). */
