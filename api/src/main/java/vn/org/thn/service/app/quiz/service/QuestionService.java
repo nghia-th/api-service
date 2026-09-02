@@ -320,7 +320,7 @@ public class QuestionService extends IBase {
         // for the listening-question audio clip). answerMode/referenceAnswer are both null here -
         // meaningless for MULTIPLE_CHOICE (normalizeAnswerMode/normalizeReferenceAnswer would null
         // them out anyway, skipped here since the type is already known statically).
-        Question question = questionRepository.save(newQuestion(parentId, lessonId, content, knowledgeTag, null, QuestionType.MULTIPLE_CHOICE.name(), null, null));
+        Question question = questionRepository.save(newQuestion(parentId, lessonId, content, knowledgeTag, null, QuestionType.MULTIPLE_CHOICE.name(), "MULTIPLE_CHOICE", null));
         saveChoices(question.getId(), choices);
         return question;
     }
