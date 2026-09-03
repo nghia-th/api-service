@@ -1,3 +1,5 @@
+import org.springframework.boot.gradle.tasks.bundling.BootJar
+
 plugins {
 	id 'java'
 	id 'org.springframework.boot'
@@ -60,4 +62,7 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+}
+tasks.named("bootJar") {
+	archiveFileName.set("quiz.jar")
 }

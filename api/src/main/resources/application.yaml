@@ -43,7 +43,7 @@ base:
     oracle:
       jdbc-url: jdbc:oracle:thin:@//localhost:1521/XEPDB1  # Oracle van dung URL day du, khong tach host/port
     sqlite:
-      file-name: app.db?busy_timeout=5000&journal_mode=WAL
+      file-name: app.db
 
 logging:
   pattern:
