@@ -8,6 +8,7 @@ import vn.org.thn.service.app.quiz.repository.ParentRepository;
 import vn.org.thn.service.app.quiz.repository.StudentRepository;
 import vn.org.thn.service.app.quiz.security.JwtAuthFilter;
 import vn.org.thn.service.app.quiz.security.JwtUtil;
+import vn.org.thn.service.app.quiz.security.PublicLanguageAdminGuardFilter;
 
 /**
  * Registers {@link JwtAuthFilter} against {@code /api/parent/*}, {@code /api/student/*} and
@@ -22,6 +23,18 @@ import vn.org.thn.service.app.quiz.security.JwtUtil;
  * JwtAuthFilter}'s constructor - {@code JwtAuthFilter} itself is a plain {@link
  * jakarta.servlet.Filter}, not a Spring bean, so it cannot {@code @Autowired} them itself; this
  * {@code @Bean} method's parameters are the only place Spring injection reaches it.
+ * <p>
+ * {@link PublicLanguageAdminGuardFilter} (2026-09-04, part 4/4) is registered separately, ONLY
+ * against {@code /public/language} and {@code /public/language/*} - it is NOT folded into {@link
+ * JwtAuthFilter} on purpose: that filter's {@code requiredRoleFor(uri)} is a clean, deliberately
+ * method-agnostic one-role-per-prefix lookup (see its javadoc), and {@code /public/language/**}
+ * needs the opposite - one path whose required role depends on the HTTP METHOD (GET/HEAD/OPTIONS
+ * open, everything else ADMIN-only, see {@link PublicLanguageAdminGuardFilter}'s own javadoc) -
+ * adding that one exception into {@code JwtAuthFilter} would complicate every other request it
+ * guards for the sake of a single unrelated path. Also order 2 (same as {@code
+ * jwtAuthFilterRegistration}) - the two filters' URL patterns never overlap ({@code
+ * /api/parent/*}/{@code /api/student/*}/{@code /api/admin/*} vs {@code /public/language*}), so
+ * relative order between them does not matter.
  */
 @Configuration
 public class SecurityConfig {
@@ -34,6 +47,16 @@ public class SecurityConfig {
                 new JwtAuthFilter(jwtUtil, parentRepository, studentRepository, adminRepository));
         registration.setOrder(2);
         registration.addUrlPatterns("/api/parent/*", "/api/student/*", "/api/admin/*");
+        return registration;
+    }
+
+    @Bean
+    public FilterRegistrationBean<PublicLanguageAdminGuardFilter> publicLanguageAdminGuardFilterRegistration(
+            JwtUtil jwtUtil, AdminRepository adminRepository) {
+        FilterRegistrationBean<PublicLanguageAdminGuardFilter> registration = new FilterRegistrationBean<>(
+                new PublicLanguageAdminGuardFilter(jwtUtil, adminRepository));
+        registration.setOrder(2);
+        registration.addUrlPatterns("/public/language", "/public/language/*");
         return registration;
     }
 }
