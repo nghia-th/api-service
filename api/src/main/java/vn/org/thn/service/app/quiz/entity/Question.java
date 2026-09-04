@@ -46,6 +46,14 @@ import vn.org.thn.service.base.entity.BaseEntity;
  * QuestionService#newQuestion}), same "DEFAULT only backfills old rows" caveat already documented
  * on {@code Test#testType}.
  * <p>
+ * {@code videoPath} was added 2026-09-04 for the "video question" feature (part 3/4 of a batch
+ * of requests, same date as the Admin feature) - same shape/reasoning as {@code audioPath} right
+ * above: a per-question OPTIONAL attachment (file upload only, per AskUserQuestion), not a
+ * separate question type - a question can have EITHER audioPath, videoPath, BOTH, or neither, all
+ * independently. {@code hideContentInTest} is REUSED as-is for video too (no separate flag) - it
+ * now hides content whenever the question has audio OR video (see {@code
+ * StudentQuestionResponse#from}), same Parent-facing per-question toggle either way.
+ * <p>
  * {@code answerMode}/{@code referenceAnswer} were added 2026-09-01 after the Parent tested the
  * original SPEAKING v1 and asked for more - see {@link AnswerMode}'s javadoc for {@code
  * answerMode} (only meaningful when {@code questionType} is SPEAKING, backfilled to AUDIO by
@@ -77,6 +85,9 @@ public class Question extends BaseEntity {
 
     /** true = an "content" khoi man hinh lam bai cua Hoc sinh khi cau hoi co audio (bat buoc nghe moi biet). Khong co tac dung neu audioPath null. Mac dinh false/null (hien content nhu cu). */
     private Boolean hideContentInTest;
+
+    /** Duong dan tuong doi/ten file video da luu tren server, null neu cau hoi nay chua co video (2026-09-04, phan 3/4). Cung co che luu file nhu audioPath - xem QuestionService#uploadVideo/#loadVideo. */
+    private String videoPath;
 
     /** {@link QuestionType#name()} - MULTIPLE_CHOICE (mac dinh, cau hoi trac nghiem nhu cu) hoac SPEAKING (cau hoi hoc sinh tra loi bang cach ghi am giong noi, xem QuestionType's javadoc). */
     private String questionType;

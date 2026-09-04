@@ -23,6 +23,13 @@ import java.util.List;
  * reasoning {@link StudentChoiceResponse} already applies to leaving out {@code correct}). {@code
  * content} is otherwise always the full question text, exactly as today.
  * <p>
+ * {@code hasVideo} (video-question feature, 2026-09-04, part 3/4) is the exact same idea as {@code
+ * hasAudio} - a play control the client shows when true, bytes fetched separately via {@code GET
+ * /api/student/questions/{id}/video}. {@code content} is now hidden whenever {@code
+ * Question.hideContentInTest} is true AND the question has EITHER audio OR video (or both) - the
+ * single Parent-set flag now guards both attachment kinds identically, no separate flag was added
+ * for video (see {@code Question#videoPath}'s javadoc).
+ * <p>
  * {@code answerMode}/{@code answerText} were added 2026-09-01 for the typed-essay alternative to
  * voice recording (see {@code AnswerMode}'s javadoc). {@code answerMode} tells the client which
  * control(s) to render (record button, text box, or both) - never null, defaults to AUDIO for
@@ -39,6 +46,7 @@ public class StudentQuestionResponse {
     private Long lessonId;
     private String content;
     private boolean hasAudio;
+    private boolean hasVideo;
     private List<StudentChoiceResponse> choices;
     /** {@link vn.org.thn.service.app.quiz.entity.QuestionType#name()}, added 2026-09-01 - tells the client whether to render a choice list (MULTIPLE_CHOICE) or a voice recorder (SPEAKING, choices is always empty for these). */
     private String questionType;
@@ -52,7 +60,8 @@ public class StudentQuestionResponse {
         response.questionId = question.getId();
         response.lessonId = question.getLessonId();
         response.hasAudio = question.getAudioPath() != null;
-        boolean hideContent = response.hasAudio && Boolean.TRUE.equals(question.getHideContentInTest());
+        response.hasVideo = question.getVideoPath() != null;
+        boolean hideContent = (response.hasAudio || response.hasVideo) && Boolean.TRUE.equals(question.getHideContentInTest());
         response.content = hideContent ? null : question.getContent();
         response.choices = choices.stream().map(StudentChoiceResponse::from).toList();
         response.questionType = question.getQuestionType();

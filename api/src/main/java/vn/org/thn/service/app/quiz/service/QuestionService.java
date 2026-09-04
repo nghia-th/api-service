@@ -7,6 +7,7 @@ import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.ChoiceRequest;
 import vn.org.thn.service.app.quiz.dto.QuestionAudio;
 import vn.org.thn.service.app.quiz.dto.QuestionRequest;
+import vn.org.thn.service.app.quiz.dto.QuestionVideo;
 import vn.org.thn.service.app.quiz.dto.QuestionResponse;
 import vn.org.thn.service.app.quiz.entity.AnswerMode;
 import vn.org.thn.service.app.quiz.entity.AttemptAnswer;
@@ -83,6 +84,19 @@ public class QuestionService extends IBase {
 
     /** Same folder-per-upload-kind layout as {@code LessonService#IMAGE_DIR} - see that field's javadoc for why this lives outside {@link DatabasePath}. */
     private static final Path AUDIO_DIR = DatabasePath.HOME.resolve("uploads").resolve("questions");
+
+    /** 50 MB app-level cap for a question's video clip (2026-09-04, part 3/4) - well under the 80MB Spring {@code max-file-size} in application.yaml (same "business limit smaller than the servlet-level reject threshold" reasoning as {@link #MAX_AUDIO_SIZE_BYTES}), sized up from that 10MB audio cap since a short illustrative video clip runs larger than an audio-only recording. */
+    private static final long MAX_VIDEO_SIZE_BYTES = 50L * 1024 * 1024;
+
+    private static final Map<String, String> ALLOWED_VIDEO_TYPES = Map.of(
+            "video/mp4", "mp4",
+            "video/webm", "webm",
+            "video/quicktime", "mov",
+            "video/ogg", "ogv"
+    );
+
+    /** Separate folder from {@link #AUDIO_DIR} (own upload kind, own file naming) - same layout convention. */
+    private static final Path VIDEO_DIR = DatabasePath.HOME.resolve("uploads").resolve("question-videos");
 
     @Autowired
     private QuestionRepository questionRepository;
@@ -176,6 +190,7 @@ public class QuestionService extends IBase {
         }
         choiceRepository.delete().eq(Choice::getQuestionId, id).execute();
         deleteAudioFileQuietly(question.getAudioPath());
+        deleteVideoFileQuietly(question.getVideoPath());
         questionRepository.deleteById(question.getId());
         logInfo("Question deleted: id={}, parentId={}", question.getId(), parentId);
     }
@@ -296,6 +311,120 @@ public class QuestionService extends IBase {
             Files.deleteIfExists(AUDIO_DIR.resolve(audioPath));
         } catch (IOException e) {
             log().warn("Could not delete old question audio file {}: {}", audioPath, e.getMessage());
+        }
+    }
+
+    /**
+     * Validates and stores a new video clip for the question, replacing any previous one - same
+     * shape/reasoning as {@link #uploadAudio} (2026-09-04, part 3/4 - "video question" feature,
+     * file-upload only per AskUserQuestion). Blocked by {@link #ensureNotYetAttempted} first, same
+     * integrity reasoning: replacing a Question's video after a Student has already answered it
+     * would make that Student's "xem lai bai hoc"/report review show a different video than what
+     * they actually watched.
+     */
+    public QuestionResponse uploadVideo(Long id, MultipartFile file) {
+        Long parentId = CurrentUser.get().userId();
+        Question question = getOwnedOrThrow(id, parentId);
+        ensureNotYetAttempted(id);
+
+        String extension = ALLOWED_VIDEO_TYPES.get(file.getContentType());
+        if (extension == null) {
+            throw new BusinessException(QuizErrorCode.QUESTION_VIDEO_INVALID_TYPE);
+        }
+        if (file.getSize() > MAX_VIDEO_SIZE_BYTES) {
+            throw new BusinessException(QuizErrorCode.QUESTION_VIDEO_TOO_LARGE);
+        }
+
+        try {
+            Files.createDirectories(VIDEO_DIR);
+        } catch (IOException e) {
+            logError("Could not create question video directory " + VIDEO_DIR, e);
+            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
+        }
+
+        String oldVideoPath = question.getVideoPath();
+        String filename = "question-" + id + "-" + UUID.randomUUID() + "." + extension;
+        Path target = VIDEO_DIR.resolve(filename);
+        try {
+            file.transferTo(target);
+        } catch (IOException e) {
+            logError("Could not save question video to " + target, e);
+            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
+        }
+
+        question.setVideoPath(filename);
+        question.setUpdatedAt(LocalDateTime.now());
+        question.setUpdatedBy("parent:" + parentId);
+        question = questionRepository.save(question);
+
+        // Only removed AFTER the new file is safely written+saved, same reasoning as uploadAudio.
+        deleteVideoFileQuietly(oldVideoPath);
+
+        logInfo("Question video uploaded: id={}, parentId={}, filename={}", id, parentId, filename);
+        return QuestionResponse.from(question, choicesOf(id));
+    }
+
+    /** Only the owning Parent can view it. Throws {@code COMMON_005 NOT_FOUND} if the question has no video yet. */
+    public QuestionVideo getVideoOwned(Long id, Long parentId) {
+        Question question = getOwnedOrThrow(id, parentId);
+        return loadVideo(question);
+    }
+
+    /** Same {@link #ensureNotYetAttempted} guard as {@link #uploadVideo} - see that method's javadoc. */
+    public QuestionResponse deleteVideo(Long id) {
+        Long parentId = CurrentUser.get().userId();
+        Question question = getOwnedOrThrow(id, parentId);
+        ensureNotYetAttempted(id);
+
+        deleteVideoFileQuietly(question.getVideoPath());
+        question.setVideoPath(null);
+        question.setUpdatedAt(LocalDateTime.now());
+        question.setUpdatedBy("parent:" + parentId);
+        question = questionRepository.save(question);
+
+        logInfo("Question video deleted: id={}, parentId={}", id, parentId);
+        return QuestionResponse.from(question, choicesOf(id));
+    }
+
+    /**
+     * Reads the question's video bytes off disk. Package-private + takes the already-resolved
+     * {@link Question} (no ownership check of its own) so {@code StudentAttemptService} can reuse
+     * it once it has independently proven the current Student may watch this Question's video -
+     * same reuse shape as {@link #loadAudio}.
+     */
+    QuestionVideo loadVideo(Question question) {
+        if (question.getVideoPath() == null) {
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Question has no video");
+        }
+        Path path = VIDEO_DIR.resolve(question.getVideoPath());
+        byte[] bytes;
+        try {
+            bytes = Files.readAllBytes(path);
+        } catch (IOException e) {
+            logError("Question video file missing on disk: " + path, e);
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Question video file not found");
+        }
+        return new QuestionVideo(bytes, contentTypeForVideoFilename(question.getVideoPath()), question.getVideoPath());
+    }
+
+    private String contentTypeForVideoFilename(String filename) {
+        String ext = filename.substring(filename.lastIndexOf('.') + 1).toLowerCase();
+        return ALLOWED_VIDEO_TYPES.entrySet().stream()
+                .filter(entry -> entry.getValue().equals(ext))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse("application/octet-stream");
+    }
+
+    /** Best-effort delete - a missing/already-gone file is not an error worth failing the caller's request over. */
+    private void deleteVideoFileQuietly(String videoPath) {
+        if (videoPath == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(VIDEO_DIR.resolve(videoPath));
+        } catch (IOException e) {
+            log().warn("Could not delete old question video file {}: {}", videoPath, e.getMessage());
         }
     }
 

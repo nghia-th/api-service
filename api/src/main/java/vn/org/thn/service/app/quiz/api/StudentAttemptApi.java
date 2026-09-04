@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.AnswerRequest;
 import vn.org.thn.service.app.quiz.dto.QuestionAudio;
+import vn.org.thn.service.app.quiz.dto.QuestionVideo;
 import vn.org.thn.service.app.quiz.dto.SpeakingAnswerAudio;
 import vn.org.thn.service.app.quiz.dto.SpeakingTextAnswerRequest;
 import vn.org.thn.service.app.quiz.dto.StartAttemptResponse;
@@ -121,6 +122,24 @@ public class StudentAttemptApi extends BaseCtl {
                 .contentType(MediaType.parseMediaType(audio.contentType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + audio.filename() + "\"")
                 .body(audio.content());
+    }
+
+    @Operation(
+            summary = "Download a question's video clip",
+            description = "Video-question feature (2026-09-04, part 3/4). Only reachable if some test assigned to the current student has this question on it (works both while taking the test and after submitting, same as the question audio endpoint above)."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the video file (Content-Type set from its stored type)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This question is not reachable from any test assigned to the current student - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No question with this id, or it has no video - COMMON_005 NOT_FOUND")
+    })
+    @GetMapping("/questions/{id}/video")
+    public ResponseEntity<byte[]> questionVideo(@Parameter(description = "Question id") @PathVariable Long id) {
+        QuestionVideo video = studentAttemptService.getQuestionVideo(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(video.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + video.filename() + "\"")
+                .body(video.content());
     }
 
     @Operation(

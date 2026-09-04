@@ -7,6 +7,7 @@ import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.AnswerItem;
 import vn.org.thn.service.app.quiz.dto.AnswerRequest;
 import vn.org.thn.service.app.quiz.dto.QuestionAudio;
+import vn.org.thn.service.app.quiz.dto.QuestionVideo;
 import vn.org.thn.service.app.quiz.dto.SpeakingAnswerAudio;
 import vn.org.thn.service.app.quiz.dto.StartAttemptResponse;
 import vn.org.thn.service.app.quiz.dto.KnowledgeTagBreakdown;
@@ -279,6 +280,26 @@ public class StudentAttemptService extends IBase {
         }
 
         return questionService.loadAudio(question);
+    }
+
+    /**
+     * Video-question feature (2026-09-04, part 3/4) - same access check as {@link
+     * #getQuestionAudio} right above (a Question is reachable precisely because it is on some
+     * Test assigned to the current Student), just loading the video file instead of the audio one.
+     */
+    public QuestionVideo getQuestionVideo(Long questionId) {
+        Long studentId = CurrentUser.get().userId();
+        Question question = questionService.getById(questionId);
+
+        List<Long> testIds = testQuestionRepository.query().eq(TestQuestion::getQuestionId, questionId).list()
+                .stream().map(TestQuestion::getTestId).distinct().toList();
+        boolean accessible = !testIds.isEmpty()
+                && testRepository.query().in(Test::getId, testIds).eq(Test::getStudentId, studentId).exists();
+        if (!accessible) {
+            throw new BusinessException(CommonErrorCode.FORBIDDEN, "Question video is not accessible");
+        }
+
+        return questionService.loadVideo(question);
     }
 
     @Transactional

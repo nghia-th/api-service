@@ -38,6 +38,10 @@ import vn.org.thn.service.base.exception.ErrorCode;
  * {@code AuthService#loginParent}/{@code #loginStudent} ONLY after the password already matched
  * (never before - an unauthenticated caller must not learn "this email exists but is
  * deactivated" from a wrong-password guess) - see {@code entity/Parent.java#active}'s javadoc.
+ * {@code QUESTION_VIDEO_INVALID_TYPE}/{@code QUESTION_VIDEO_TOO_LARGE} (QUIZ_028/QUIZ_029, added
+ * 2026-09-04 for the "video question" feature, part 3/4) guard {@code
+ * QuestionService#uploadVideo}, same shape as {@code QUESTION_AUDIO_INVALID_TYPE}/{@code
+ * QUESTION_AUDIO_TOO_LARGE} (QUIZ_020/QUIZ_021) for a question's audio clip.
  */
 public enum QuizErrorCode implements ErrorCode {
 
@@ -67,7 +71,9 @@ public enum QuizErrorCode implements ErrorCode {
     SPEAKING_ANSWER_TOO_LARGE("QUIZ_024", "Speaking answer must be 10MB or smaller", HttpStatus.BAD_REQUEST),
     QUESTION_NOT_SPEAKING_TYPE("QUIZ_025", "This question is not a speaking question", HttpStatus.BAD_REQUEST),
     REFRESH_TOKEN_INVALID("QUIZ_026", "Refresh token is unknown, expired, already used, or its account no longer exists", HttpStatus.UNAUTHORIZED),
-    ACCOUNT_DEACTIVATED("QUIZ_027", "This account has been deactivated by an administrator", HttpStatus.FORBIDDEN);
+    ACCOUNT_DEACTIVATED("QUIZ_027", "This account has been deactivated by an administrator", HttpStatus.FORBIDDEN),
+    QUESTION_VIDEO_INVALID_TYPE("QUIZ_028", "Question video must be an MP4, WebM, MOV or OGG file", HttpStatus.BAD_REQUEST),
+    QUESTION_VIDEO_TOO_LARGE("QUIZ_029", "Question video must be 50MB or smaller", HttpStatus.BAD_REQUEST);
 
     private final String code;
     private final String message;

@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.QuestionAudio;
 import vn.org.thn.service.app.quiz.dto.QuestionImportResponse;
+import vn.org.thn.service.app.quiz.dto.QuestionVideo;
 import vn.org.thn.service.app.quiz.dto.QuestionRequest;
 import vn.org.thn.service.app.quiz.dto.QuestionResponse;
 import vn.org.thn.service.app.quiz.dto.TemplateFile;
@@ -180,6 +181,57 @@ public class QuestionApi extends BaseCtl {
     @DeleteMapping("/{id}/audio")
     public ResponseEntity<ApiResponse<QuestionResponse>> deleteAudio(@Parameter(description = "Question id") @PathVariable Long id) {
         return ok(questionService.deleteAudio(id));
+    }
+
+    @Operation(
+            summary = "Upload/replace the question's video clip",
+            description = "Video-question feature (2026-09-04, part 3/4). MP4/WebM/MOV/OGG only, 50MB max. Replaces any previous video for this question. Only the owning Parent can upload it. Blocked once the question has already been answered in an attempt, same rule as uploadAudio()."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Uploaded successfully - returns the updated Question (hasVideo=true)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Wrong file type - QUIZ_028, or file too large - QUIZ_029"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This question does not belong to the current parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No question with this id - COMMON_005 NOT_FOUND"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "This question has already been answered in a test attempt - QUIZ_019 QUESTION_HAS_ATTEMPTS")
+    })
+    @PostMapping(value = "/{id}/video", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<QuestionResponse>> uploadVideo(
+            @Parameter(description = "Question id") @PathVariable Long id,
+            @Parameter(description = "The video file - video/mp4, video/webm, video/quicktime or video/ogg") @RequestPart MultipartFile file) {
+        return ok(questionService.uploadVideo(id, file));
+    }
+
+    @Operation(
+            summary = "Download the question's video clip",
+            description = "Only the owning Parent can view it. See StudentAttemptApi for the student-facing equivalent (access gated by whether the question is on a test assigned to that student, not by lesson ownership)."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the video file (Content-Type set from its stored type)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This question does not belong to the current parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No question with this id, or it has no video - COMMON_005 NOT_FOUND")
+    })
+    @GetMapping("/{id}/video")
+    public ResponseEntity<byte[]> video(@Parameter(description = "Question id") @PathVariable Long id) {
+        QuestionVideo video = questionService.getVideoOwned(id, CurrentUser.get().userId());
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(video.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + video.filename() + "\"")
+                .body(video.content());
+    }
+
+    @Operation(
+            summary = "Delete the question's video clip",
+            description = "No-op (still 200) if the question had no video. Only the owning Parent can delete it. Blocked once the question has already been answered in an attempt, same rule as uploadVideo()."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted (or already had no video) - returns the updated Question (hasVideo=false)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This question does not belong to the current parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No question with this id - COMMON_005 NOT_FOUND"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "This question has already been answered in a test attempt - QUIZ_019 QUESTION_HAS_ATTEMPTS")
+    })
+    @DeleteMapping("/{id}/video")
+    public ResponseEntity<ApiResponse<QuestionResponse>> deleteVideo(@Parameter(description = "Question id") @PathVariable Long id) {
+        return ok(questionService.deleteVideo(id));
     }
 
     @Operation(

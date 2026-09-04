@@ -10,10 +10,12 @@ import java.util.List;
  * {@code hasAudio} is derived from {@link Question#getAudioPath()} being non-null rather than
  * exposing the raw storage path/filename to clients - the actual bytes are fetched separately via
  * {@code GET /api/parent/questions/{id}/audio}, same pattern {@link LessonResponse#isHasImage()}
- * already uses for a Lesson's illustrative image. {@code hideContentInTest} is passed through as-
- * is here (Parent-facing view - the Parent is always allowed to see their own setting); compare
- * {@link vn.org.thn.service.app.quiz.dto.StudentQuestionResponse}, which enforces the hiding
- * itself instead of merely exposing the flag.
+ * already uses for a Lesson's illustrative image. {@code hasVideo} (2026-09-04) is the same idea
+ * for {@link Question#getVideoPath()} - bytes fetched separately via {@code GET
+ * /api/parent/questions/{id}/video}. {@code hideContentInTest} is passed through as-is here
+ * (Parent-facing view - the Parent is always allowed to see their own setting); compare {@link
+ * vn.org.thn.service.app.quiz.dto.StudentQuestionResponse}, which enforces the hiding itself
+ * instead of merely exposing the flag.
  */
 @Data
 public class QuestionResponse {
@@ -23,6 +25,7 @@ public class QuestionResponse {
     private String knowledgeTag;
     private List<ChoiceResponse> choices;
     private boolean hasAudio;
+    private boolean hasVideo;
     private boolean hideContentInTest;
     /** {@link vn.org.thn.service.app.quiz.entity.QuestionType#name()} - "MULTIPLE_CHOICE" or "SPEAKING", added 2026-09-01. Never null - {@code Question#getQuestionType()} is always set (see QuestionService#newQuestion). */
     private String questionType;
@@ -39,6 +42,7 @@ public class QuestionResponse {
         response.knowledgeTag = question.getKnowledgeTag();
         response.choices = choices.stream().map(ChoiceResponse::from).toList();
         response.hasAudio = question.getAudioPath() != null;
+        response.hasVideo = question.getVideoPath() != null;
         response.hideContentInTest = Boolean.TRUE.equals(question.getHideContentInTest());
         response.questionType = question.getQuestionType();
         response.answerMode = question.getAnswerMode();
