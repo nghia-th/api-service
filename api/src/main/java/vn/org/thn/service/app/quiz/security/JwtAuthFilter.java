@@ -47,6 +47,11 @@ import java.io.IOException;
  * once {@code AuthService#logoutAll()} (force-logout) has bumped it - either way every request
  * after that point is rejected, not just ones after the token's own (now much shorter, see {@link
  * JwtUtil}) natural expiry.
+ * <p>
+ * <b>RAM cache (2026-09-04):</b> the tokenVersion/active re-check above used to mean a DB read on
+ * EVERY single request - now it goes through {@link TokenVersionCache} first (see that
+ * interface's javadoc for the full design, including why every mutation site MUST evict rather
+ * than rely on a TTL). Only a cache MISS falls through to a repository read.
  */
 public class JwtAuthFilter implements Filter {
 
@@ -61,12 +66,15 @@ public class JwtAuthFilter implements Filter {
     private final ParentRepository parentRepository;
     private final StudentRepository studentRepository;
     private final AdminRepository adminRepository;
+    private final TokenVersionCache tokenVersionCache;
 
-    public JwtAuthFilter(JwtUtil jwtUtil, ParentRepository parentRepository, StudentRepository studentRepository, AdminRepository adminRepository) {
+    public JwtAuthFilter(JwtUtil jwtUtil, ParentRepository parentRepository, StudentRepository studentRepository,
+                          AdminRepository adminRepository, TokenVersionCache tokenVersionCache) {
         this.jwtUtil = jwtUtil;
         this.parentRepository = parentRepository;
         this.studentRepository = studentRepository;
         this.adminRepository = adminRepository;
+        this.tokenVersionCache = tokenVersionCache;
     }
 
     @Override
@@ -118,27 +126,53 @@ public class JwtAuthFilter implements Filter {
     }
 
     /**
-     * Re-checks {@code payload} against the CURRENT state of its owning Parent/Student row - true
-     * only if the row still exists AND its {@code tokenVersion} still matches the token's {@code
-     * tv} claim. See this class's javadoc ("tokenVersion re-check") for why this DB hit happens
-     * on every request instead of trusting the JWT signature/expiry alone.
+     * Re-checks {@code payload} against the CURRENT state of its owning Parent/Student/Admin row
+     * - true only if the row still exists AND is active (Parent only) AND its {@code
+     * tokenVersion} still matches the token's {@code tv} claim. See this class's javadoc
+     * ("tokenVersion re-check") for why this happens on every request instead of trusting the JWT
+     * signature/expiry alone, and ("RAM cache") for why this reads {@link #tokenVersionCache}
+     * first instead of always hitting the DB.
      */
     private boolean currentTokenVersionMatches(JwtUtil.Payload payload) {
-        if (payload.role() == Role.PARENT) {
-            Parent parent = parentRepository.findById(payload.userId());
-            // .isActive() too (2026-09-04, Admin feature) - a Parent an Admin just deactivated
-            // must be rejected here on their very next request, not just at their next login;
-            // see entity/Parent.java#active's javadoc for why this alone is enough (no separate
-            // per-request check needed for their Students - AdminParentService#setActive(false)
-            // already bumps every Student's own tokenVersion in the same call).
-            return parent != null && parent.isActive() && parent.getTokenVersion() == payload.tokenVersion();
+        TokenVersionCache.CachedAccountState cached = tokenVersionCache.get(payload.role(), payload.userId());
+        if (cached == null) {
+            cached = loadAndCacheAccountState(payload.role(), payload.userId());
+            if (cached == null) {
+                return false;
+            }
         }
-        if (payload.role() == Role.STUDENT) {
-            Student student = studentRepository.findById(payload.userId());
-            return student != null && student.getTokenVersion() == payload.tokenVersion();
+        return cached.active() && cached.tokenVersion() == payload.tokenVersion();
+    }
+
+    /** Cache-miss path: reads the owning Parent/Student/Admin row, caches it if found, and returns it (or null if the row no longer exists - never cached, see {@link TokenVersionCache}'s javadoc). */
+    private TokenVersionCache.CachedAccountState loadAndCacheAccountState(Role role, Long userId) {
+        TokenVersionCache.CachedAccountState state;
+        if (role == Role.PARENT) {
+            Parent parent = parentRepository.findById(userId);
+            if (parent == null) {
+                return null;
+            }
+            // isActive() cached too (2026-09-04, Admin feature) - a Parent an Admin just
+            // deactivated must be rejected on their very next request, not just at their next
+            // login; see entity/Parent.java#active's javadoc for why no separate per-request
+            // check is needed for their Students (AdminParentService#setActive(false) already
+            // bumps every Student's own tokenVersion in the same call).
+            state = new TokenVersionCache.CachedAccountState(parent.getTokenVersion(), parent.isActive());
+        } else if (role == Role.STUDENT) {
+            Student student = studentRepository.findById(userId);
+            if (student == null) {
+                return null;
+            }
+            state = new TokenVersionCache.CachedAccountState(student.getTokenVersion(), true);
+        } else {
+            Admin admin = adminRepository.findById(userId);
+            if (admin == null) {
+                return null;
+            }
+            state = new TokenVersionCache.CachedAccountState(admin.getTokenVersion(), true);
         }
-        Admin admin = adminRepository.findById(payload.userId());
-        return admin != null && admin.getTokenVersion() == payload.tokenVersion();
+        tokenVersionCache.put(role, userId, state);
+        return state;
     }
 
     /** Which role a URI requires, from its {@code /api/parent/}/{@code /api/student/} prefix - null if neither (should not happen, see caller). */

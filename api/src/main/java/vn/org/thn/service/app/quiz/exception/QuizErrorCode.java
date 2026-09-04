@@ -41,7 +41,12 @@ import vn.org.thn.service.base.exception.ErrorCode;
  * {@code QUESTION_VIDEO_INVALID_TYPE}/{@code QUESTION_VIDEO_TOO_LARGE} (QUIZ_028/QUIZ_029, added
  * 2026-09-04 for the "video question" feature, part 3/4) guard {@code
  * QuestionService#uploadVideo}, same shape as {@code QUESTION_AUDIO_INVALID_TYPE}/{@code
- * QUESTION_AUDIO_TOO_LARGE} (QUIZ_020/QUIZ_021) for a question's audio clip.
+ * QUESTION_AUDIO_TOO_LARGE} (QUIZ_020/QUIZ_021) for a question's audio clip. {@code
+ * OLD_PASSWORD_INCORRECT} (QUIZ_030, added 2026-09-04 for the self-service change-password
+ * feature) guards {@code AuthService#changePassword} - deliberately its OWN code rather than
+ * reusing {@code INVALID_CREDENTIALS} (QUIZ_004), since this happens to an ALREADY-authenticated
+ * caller (wrong old password on a change-password call), a different situation from a failed
+ * login.
  */
 public enum QuizErrorCode implements ErrorCode {
 
@@ -73,7 +78,8 @@ public enum QuizErrorCode implements ErrorCode {
     REFRESH_TOKEN_INVALID("QUIZ_026", "Refresh token is unknown, expired, already used, or its account no longer exists", HttpStatus.UNAUTHORIZED),
     ACCOUNT_DEACTIVATED("QUIZ_027", "This account has been deactivated by an administrator", HttpStatus.FORBIDDEN),
     QUESTION_VIDEO_INVALID_TYPE("QUIZ_028", "Question video must be an MP4, WebM, MOV or OGG file", HttpStatus.BAD_REQUEST),
-    QUESTION_VIDEO_TOO_LARGE("QUIZ_029", "Question video must be 50MB or smaller", HttpStatus.BAD_REQUEST);
+    QUESTION_VIDEO_TOO_LARGE("QUIZ_029", "Question video must be 50MB or smaller", HttpStatus.BAD_REQUEST),
+    OLD_PASSWORD_INCORRECT("QUIZ_030", "Current password is incorrect", HttpStatus.BAD_REQUEST);
 
     private final String code;
     private final String message;

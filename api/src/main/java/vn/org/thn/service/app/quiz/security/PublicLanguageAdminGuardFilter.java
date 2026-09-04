@@ -58,10 +58,12 @@ public class PublicLanguageAdminGuardFilter implements Filter {
 
     private final JwtUtil jwtUtil;
     private final AdminRepository adminRepository;
+    private final TokenVersionCache tokenVersionCache;
 
-    public PublicLanguageAdminGuardFilter(JwtUtil jwtUtil, AdminRepository adminRepository) {
+    public PublicLanguageAdminGuardFilter(JwtUtil jwtUtil, AdminRepository adminRepository, TokenVersionCache tokenVersionCache) {
         this.jwtUtil = jwtUtil;
         this.adminRepository = adminRepository;
+        this.tokenVersionCache = tokenVersionCache;
     }
 
     @Override
@@ -99,8 +101,22 @@ public class PublicLanguageAdminGuardFilter implements Filter {
             return;
         }
 
-        Admin admin = adminRepository.findById(payload.userId());
-        if (admin == null || admin.getTokenVersion() != payload.tokenVersion()) {
+        // Goes through TokenVersionCache first (2026-09-04, same RAM-cache mechanism as
+        // JwtAuthFilter - see that class's "RAM cache" javadoc and TokenVersionCache's own
+        // javadoc for the full design) instead of always hitting the DB; a cache miss falls
+        // through to a repository read and populates the cache for next time.
+        TokenVersionCache.CachedAccountState cached = tokenVersionCache.get(Role.ADMIN, payload.userId());
+        if (cached == null) {
+            Admin admin = adminRepository.findById(payload.userId());
+            if (admin == null) {
+                writeError(httpResponse, QuizErrorCode.UNAUTHORIZED,
+                        "Token no longer valid - the account was removed, or logged out from all devices");
+                return;
+            }
+            cached = new TokenVersionCache.CachedAccountState(admin.getTokenVersion(), true);
+            tokenVersionCache.put(Role.ADMIN, payload.userId(), cached);
+        }
+        if (cached.tokenVersion() != payload.tokenVersion()) {
             writeError(httpResponse, QuizErrorCode.UNAUTHORIZED,
                     "Token no longer valid - the account was removed, or logged out from all devices");
             return;

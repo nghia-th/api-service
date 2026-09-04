@@ -70,13 +70,8 @@ quiz:
     # Refresh token lifetime - stored hashed in the refresh_token table (not a JWT, see JwtUtil),
     # rotated on every use (AuthService#refresh). A user idle longer than this must log in again.
     refresh-token-expiration-days: 30
-  admin:
-    # DEV ONLY placeholders, same warning as quiz.jwt.secret above - override both via an
-    # env-specific config before any non-local deployment, and change the password immediately
-    # after first login (there is no "change own password" endpoint yet in v1). Read once at
-    # startup by AdminBootstrapRunner to create the FIRST Admin row if the admin table is still
-    # empty - changing these after that first row already exists has no effect (see that class's
-    # javadoc for why).
-    bootstrap-email: "admin@example.com"
-    bootstrap-password: "ChangeMe123!"
+  # quiz.admin.bootstrap-email/bootstrap-password REMOVED (2026-09-04) - AdminBootstrapRunner now
+  # always creates a fixed "root"/"root" account instead of reading credentials from here (per
+  # the user's explicit request - see that class's javadoc). Change root's password immediately
+  # after first login via POST /api/admin/change-password.
 

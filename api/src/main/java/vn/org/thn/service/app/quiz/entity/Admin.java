@@ -18,15 +18,24 @@ import vn.org.thn.service.base.entity.BaseEntity;
  * <p>
  * <b>No self-registration</b> - unlike Parent, there is no {@code POST /api/auth/admin/register}.
  * The first (and, in v1, only) Admin row is created at startup by {@code
- * config/AdminBootstrapRunner} from {@code quiz.admin.bootstrap-email}/{@code
- * bootstrap-password} in {@code application.yaml} if the {@code admin} table is empty - see that
- * class's javadoc for why (bootstrapping problem: nothing/no-one exists yet to call a "create
- * admin" endpoint with).
+ * config/AdminBootstrapRunner} - a FIXED {@code root}/{@code root} login (2026-09-04, replacing
+ * the earlier {@code quiz.admin.bootstrap-email}/{@code bootstrap-password} application.yaml
+ * config - see that class's javadoc for why it changed) if the {@code admin} table is empty - see
+ * that class's javadoc for why bootstrapping is needed at all (nothing/no-one exists yet to call
+ * a "create admin" endpoint with).
+ * <p>
+ * <b>{@code root} (2026-09-04):</b> true ONLY for that one bootstrap-created account - marks it
+ * as protected from deletion. There is no Admin-delete-Admin endpoint in v1 at all (Admin only
+ * manages Parents, see this class's own javadoc above), so this flag has no enforcement code to
+ * point to yet - it exists so that WHENEVER such a feature is added later, the guard is "don't
+ * allow deleting a row where {@code root=true}", decided and recorded now rather than left as a
+ * gap someone has to remember. This account's PASSWORD can still be changed (see 2026-09-04's
+ * change-password feature) - only deletion is blocked by this flag.
  * <p>
  * {@code tokenVersion} - same purpose/mechanism as {@link Parent#getTokenVersion()}/{@link
  * Student#getTokenVersion()} (force-logout, see {@code AuthService}'s javadoc) - included here
- * too so an Admin session can also be force-logged-out consistently, even though nothing calls
- * that for Admin yet in v1.
+ * too so an Admin session can also be force-logged-out consistently (now also triggered by a
+ * self-service password change, see {@code AuthService#changePassword}).
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -46,4 +55,5 @@ public class Admin extends BaseEntity {
 
     private String fullName;
     private int tokenVersion = 0;
+    private boolean root = false;
 }

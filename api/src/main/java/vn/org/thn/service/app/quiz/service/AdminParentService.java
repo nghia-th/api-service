@@ -35,6 +35,7 @@ import vn.org.thn.service.app.quiz.repository.TestQuestionRepository;
 import vn.org.thn.service.app.quiz.repository.TestRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.app.quiz.security.Role;
+import vn.org.thn.service.app.quiz.security.TokenVersionCache;
 import vn.org.thn.service.base.IBase;
 import vn.org.thn.service.base.exception.BusinessException;
 import vn.org.thn.service.base.exception.CommonErrorCode;
@@ -116,6 +117,9 @@ public class AdminParentService extends IBase {
     @Autowired
     private AuthService authService;
 
+    @Autowired
+    private TokenVersionCache tokenVersionCache;
+
     /** Every Parent in the system, most-recently-created-first is NOT guaranteed (no ORDER BY here, same "whatever the DB returns" as {@code BaseRepositoryImpl#findFirst}) - the Admin UI sorts/filters client-side. */
     public List<AdminParentSummary> list() {
         return parentRepository.findAll().stream().map(AdminParentSummary::from).toList();
@@ -169,6 +173,14 @@ public class AdminParentService extends IBase {
             for (Long studentId : studentIds) {
                 authService.invalidateSessions(studentId, Role.STUDENT);
             }
+        } else {
+            // Reactivating does NOT go through invalidateSessions (nothing to force-logout, and
+            // tokenVersion is intentionally left untouched) - but the cached state from BEFORE
+            // reactivation may still say active=false (2026-09-04, RAM cache) if any request was
+            // checked while this Parent was deactivated. Must evict here too, on this branch,
+            // or a legitimate token would keep failing JwtAuthFilter's check after reactivation
+            // until something else happens to evict this entry - see TokenVersionCache's javadoc.
+            tokenVersionCache.evict(Role.PARENT, parent.getId());
         }
 
         logInfo("Parent active flag changed by Admin: id={}, active={}, adminId={}", parentId, request.isActive(), adminId);
@@ -233,6 +245,15 @@ public class AdminParentService extends IBase {
         }
         studentRepository.delete().eq(Student::getParentId, parentId).execute();
         parentRepository.deleteById(parentId);
+
+        // Evict cache for the deleted Parent + every deleted Student (2026-09-04, RAM cache) - a
+        // stale cache entry (tokenVersion + active=true) for a row that no longer exists would
+        // otherwise keep letting an already-issued token pass JwtAuthFilter's check, since the
+        // filter only re-reads the DB on a cache MISS. See TokenVersionCache's javadoc.
+        tokenVersionCache.evict(Role.PARENT, parentId);
+        for (Long studentId : studentIds) {
+            tokenVersionCache.evict(Role.STUDENT, studentId);
+        }
 
         logInfo("Parent deleted (cascade) by Admin: id={}, adminId={}, studentsDeleted={}, classroomsDeleted={}, " +
                         "subjectsDeleted={}, lessonsDeleted={}, questionsDeleted={}, testsDeleted={}",

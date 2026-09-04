@@ -9,6 +9,7 @@ import vn.org.thn.service.app.quiz.repository.StudentRepository;
 import vn.org.thn.service.app.quiz.security.JwtAuthFilter;
 import vn.org.thn.service.app.quiz.security.JwtUtil;
 import vn.org.thn.service.app.quiz.security.PublicLanguageAdminGuardFilter;
+import vn.org.thn.service.app.quiz.security.TokenVersionCache;
 
 /**
  * Registers {@link JwtAuthFilter} against {@code /api/parent/*}, {@code /api/student/*} and
@@ -35,6 +36,9 @@ import vn.org.thn.service.app.quiz.security.PublicLanguageAdminGuardFilter;
  * jwtAuthFilterRegistration}) - the two filters' URL patterns never overlap ({@code
  * /api/parent/*}/{@code /api/student/*}/{@code /api/admin/*} vs {@code /public/language*}), so
  * relative order between them does not matter.
+ * <p>
+ * Both filters now also take a {@link TokenVersionCache} (2026-09-04, RAM cache) - see that
+ * interface's javadoc for the design, and each filter's own javadoc for how it uses it.
  */
 @Configuration
 public class SecurityConfig {
@@ -42,9 +46,9 @@ public class SecurityConfig {
     @Bean
     public FilterRegistrationBean<JwtAuthFilter> jwtAuthFilterRegistration(
             JwtUtil jwtUtil, ParentRepository parentRepository, StudentRepository studentRepository,
-            AdminRepository adminRepository) {
+            AdminRepository adminRepository, TokenVersionCache tokenVersionCache) {
         FilterRegistrationBean<JwtAuthFilter> registration = new FilterRegistrationBean<>(
-                new JwtAuthFilter(jwtUtil, parentRepository, studentRepository, adminRepository));
+                new JwtAuthFilter(jwtUtil, parentRepository, studentRepository, adminRepository, tokenVersionCache));
         registration.setOrder(2);
         registration.addUrlPatterns("/api/parent/*", "/api/student/*", "/api/admin/*");
         return registration;
@@ -52,9 +56,9 @@ public class SecurityConfig {
 
     @Bean
     public FilterRegistrationBean<PublicLanguageAdminGuardFilter> publicLanguageAdminGuardFilterRegistration(
-            JwtUtil jwtUtil, AdminRepository adminRepository) {
+            JwtUtil jwtUtil, AdminRepository adminRepository, TokenVersionCache tokenVersionCache) {
         FilterRegistrationBean<PublicLanguageAdminGuardFilter> registration = new FilterRegistrationBean<>(
-                new PublicLanguageAdminGuardFilter(jwtUtil, adminRepository));
+                new PublicLanguageAdminGuardFilter(jwtUtil, adminRepository, tokenVersionCache));
         registration.setOrder(2);
         registration.addUrlPatterns("/public/language", "/public/language/*");
         return registration;

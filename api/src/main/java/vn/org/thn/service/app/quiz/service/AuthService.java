@@ -28,6 +28,7 @@ import vn.org.thn.service.app.quiz.repository.StudentRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.app.quiz.security.JwtUtil;
 import vn.org.thn.service.app.quiz.security.Role;
+import vn.org.thn.service.app.quiz.security.TokenVersionCache;
 import vn.org.thn.service.base.IBase;
 import vn.org.thn.service.base.exception.BusinessException;
 
@@ -102,6 +103,9 @@ public class AuthService extends IBase {
 
     @Autowired
     private JwtUtil jwtUtil;
+
+    @Autowired
+    private TokenVersionCache tokenVersionCache;
 
     @Value("${quiz.jwt.refresh-token-expiration-days:30}")
     private long refreshTokenExpirationDays;
@@ -297,6 +301,14 @@ public class AuthService extends IBase {
             row.setUpdatedAt(now);
             refreshTokenRepository.save(row);
         }
+
+        // Evict the cached tokenVersion/active state (2026-09-04, RAM cache) - the tokenVersion
+        // bump above is worthless if a stale cache entry keeps letting the OLD tokenVersion pass
+        // JwtAuthFilter's check. See TokenVersionCache's javadoc, "EVICT on every mutation" - this
+        // is the single choke point every caller of this method (self-service logoutAll, Admin
+        // deactivating a Parent, and 2026-09-04's change-password/reset-password, which all call
+        // this method) relies on for that guarantee.
+        tokenVersionCache.evict(role, userId);
 
         logInfo("Sessions invalidated: userId={}, role={}, revokedRefreshTokens={}",
                 userId, role, liveTokens.size());
