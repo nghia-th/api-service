@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import vn.org.thn.service.app.quiz.dto.AdminParentSummary;
+import vn.org.thn.service.app.quiz.dto.AdminResetPasswordRequest;
 import vn.org.thn.service.app.quiz.dto.AdminSetActiveRequest;
 import vn.org.thn.service.app.quiz.dto.ParentRegisterRequest;
 import vn.org.thn.service.app.quiz.security.JwtAuthFilter;
@@ -26,15 +27,17 @@ import vn.org.thn.service.base.response.ApiResponse;
 import java.util.List;
 
 /**
- * Admin's Parent-account management (2026-09-04): list/create/activate-deactivate/delete. Every
- * endpoint here is behind {@link JwtAuthFilter} under {@code /api/admin/*}, so only a valid
- * ADMIN-role token can reach it (see {@code config/SecurityConfig}'s URL patterns) - the caller's
- * own identity is never used for ownership filtering the way {@code CurrentUser.get().userId()}
- * is elsewhere in this codebase (a Parent only ever sees THEIR OWN data); an Admin's token instead
- * grants access to EVERY Parent, by design.
+ * Admin's Parent-account management: list/create/activate-deactivate/reset-password/delete
+ * (reset-password added 2026-09-04, per the user's explicit request). Every endpoint here is
+ * behind {@link JwtAuthFilter} under {@code /api/admin/*}, so only a valid ADMIN-role token can
+ * reach it (see {@code config/SecurityConfig}'s URL patterns) - the caller's own identity is never
+ * used for ownership filtering the way {@code CurrentUser.get().userId()} is elsewhere in this
+ * codebase (a Parent only ever sees THEIR OWN data); an Admin's token instead grants access to
+ * EVERY Parent, by design.
  * <p>
- * See {@link AdminParentService}'s javadoc for the actual mechanics of deactivation (force-logout)
- * and deletion (full unconditional cascade, per the user's explicit scoping decision).
+ * See {@link AdminParentService}'s javadoc for the actual mechanics of deactivation (force-logout),
+ * reset-password (Parent's own sessions only, no Student cascade), and deletion (full
+ * unconditional cascade, per the user's explicit scoping decision).
  */
 @Tag(name = "Admin - Parents", description = "Admin management of Parent accounts")
 @RestController
@@ -84,6 +87,23 @@ public class AdminParentApi extends BaseCtl {
             @Parameter(description = "Parent id") @PathVariable Long id,
             @Valid @RequestBody AdminSetActiveRequest request) {
         return ok(adminParentService.setActive(id, request));
+    }
+
+    @Operation(
+            summary = "Reset a Parent's password",
+            description = "Admin types the new password directly (same UX as creating a Parent) - immediately force-logs-out the Parent's OWN sessions only (not their Students, since a password reset doesn't touch Student credentials) - see AdminParentService#resetPassword's javadoc."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Password reset, Parent's sessions invalidated"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "newPassword fails validation - COMMON_001"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No Parent with this id - COMMON_005 NOT_FOUND")
+    })
+    @PostMapping("/{id}/reset-password")
+    public ResponseEntity<ApiResponse<Void>> resetPassword(
+            @Parameter(description = "Parent id") @PathVariable Long id,
+            @Valid @RequestBody AdminResetPasswordRequest request) {
+        adminParentService.resetPassword(id, request);
+        return ok();
     }
 
     @Operation(

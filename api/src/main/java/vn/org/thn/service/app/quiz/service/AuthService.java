@@ -258,6 +258,54 @@ public class AuthService extends IBase {
     }
 
     /**
+     * Self-service change-password for the CURRENT caller ({@link CurrentUser#get()}), any of the
+     * 3 roles (2026-09-04, per the user's explicit request). Verifies {@code oldPassword} against
+     * the stored hash first (see {@code ChangePasswordRequest}'s javadoc for why this is required
+     * even though the caller is already authenticated) - a mismatch throws {@link
+     * QuizErrorCode#OLD_PASSWORD_INCORRECT} and nothing is changed. On success, hashes and saves
+     * {@code newPassword}, then calls {@link #invalidateSessions(Long, Role)} on the caller's own
+     * account - deliberately including the CURRENT session, standard "password changed, log in
+     * again everywhere" practice; the frontend must treat a successful response the same as a
+     * manual logout (clear tokens, redirect to /login), since this call's own access token stops
+     * working on its very next request.
+     */
+    public void changePassword(String oldPassword, String newPassword) {
+        CurrentUser current = CurrentUser.get();
+        Long userId = current.userId();
+        Role role = current.role();
+        LocalDateTime now = LocalDateTime.now();
+
+        if (role == Role.PARENT) {
+            Parent parent = parentRepository.findById(userId);
+            if (parent == null || !passwordEncoder.matches(oldPassword, parent.getPassword())) {
+                throw new BusinessException(QuizErrorCode.OLD_PASSWORD_INCORRECT);
+            }
+            parent.setPassword(passwordEncoder.encode(newPassword));
+            parent.setUpdatedAt(now);
+            parentRepository.save(parent);
+        } else if (role == Role.STUDENT) {
+            Student student = studentRepository.findById(userId);
+            if (student == null || !passwordEncoder.matches(oldPassword, student.getPassword())) {
+                throw new BusinessException(QuizErrorCode.OLD_PASSWORD_INCORRECT);
+            }
+            student.setPassword(passwordEncoder.encode(newPassword));
+            student.setUpdatedAt(now);
+            studentRepository.save(student);
+        } else {
+            Admin admin = adminRepository.findById(userId);
+            if (admin == null || !passwordEncoder.matches(oldPassword, admin.getPassword())) {
+                throw new BusinessException(QuizErrorCode.OLD_PASSWORD_INCORRECT);
+            }
+            admin.setPassword(passwordEncoder.encode(newPassword));
+            admin.setUpdatedAt(now);
+            adminRepository.save(admin);
+        }
+
+        invalidateSessions(userId, role);
+        logInfo("Password changed (self-service): userId={}, role={}", userId, role);
+    }
+
+    /**
      * Invalidates EVERY session of the given {@code userId}/{@code role} at once: bumps {@code
      * tokenVersion} (so every already-issued access token fails its next {@code JwtAuthFilter}
      * check immediately, not just at its natural expiry) and revokes every outstanding refresh

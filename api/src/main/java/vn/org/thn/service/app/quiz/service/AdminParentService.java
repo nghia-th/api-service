@@ -6,6 +6,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.org.thn.service.app.quiz.dto.AdminParentSummary;
+import vn.org.thn.service.app.quiz.dto.AdminResetPasswordRequest;
 import vn.org.thn.service.app.quiz.dto.AdminSetActiveRequest;
 import vn.org.thn.service.app.quiz.dto.ParentRegisterRequest;
 import vn.org.thn.service.app.quiz.entity.Attempt;
@@ -185,6 +186,30 @@ public class AdminParentService extends IBase {
 
         logInfo("Parent active flag changed by Admin: id={}, active={}, adminId={}", parentId, request.isActive(), adminId);
         return AdminParentSummary.from(parent);
+    }
+
+    /**
+     * Admin resets {@code parentId}'s password directly (2026-09-04, per the user's explicit
+     * request - Admin types the new password, same UX as the create-parent flow; see {@code
+     * AdminResetPasswordRequest}'s javadoc for why there is no {@code oldPassword} field here,
+     * unlike self-service {@code AuthService#changePassword}). Only the Parent's OWN sessions are
+     * invalidated - deliberately NOT cascaded to their Students (unlike {@link #setActive}'s
+     * deactivation branch): a password reset never touches Student credentials, so there is no
+     * reason to force-log-out Students too.
+     */
+    @Transactional
+    public void resetPassword(Long parentId, AdminResetPasswordRequest request) {
+        Parent parent = getOwnedOrThrow(parentId);
+        Long adminId = CurrentUser.get().userId();
+
+        parent.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        parent.setUpdatedAt(LocalDateTime.now());
+        parent.setUpdatedBy("admin:" + adminId);
+        parentRepository.save(parent);
+
+        authService.invalidateSessions(parent.getId(), Role.PARENT);
+
+        logInfo("Parent password reset by Admin: id={}, adminId={}", parentId, adminId);
     }
 
     /**
