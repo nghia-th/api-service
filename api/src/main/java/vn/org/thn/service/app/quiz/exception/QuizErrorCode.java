@@ -30,7 +30,14 @@ import vn.org.thn.service.base.exception.ErrorCode;
  * {@code SPEAKING_ANSWER_TOO_LARGE} (QUIZ_023/QUIZ_024) guard {@code
  * StudentAttemptService#uploadSpeakingAnswer}, same shape as QUIZ_020/QUIZ_021 for Question audio.
  * {@code QUESTION_NOT_SPEAKING_TYPE} (QUIZ_025) guards every speaking-answer/grade endpoint
- * against being called on an ordinary MULTIPLE_CHOICE question.
+ * against being called on an ordinary MULTIPLE_CHOICE question. {@code REFRESH_TOKEN_INVALID}
+ * (QUIZ_026, added 2026-09-04 for the refresh-token feature) is ONE shared error for "unknown
+ * token" / "already revoked" / "expired" / "owning account no longer exists" - same "never reveal
+ * which" reasoning as {@code INVALID_CREDENTIALS}, see {@code AuthService#findValidRefreshTokenOrThrow}.
+ * {@code ACCOUNT_DEACTIVATED} (QUIZ_027, added 2026-09-04 for the Admin feature) is thrown by
+ * {@code AuthService#loginParent}/{@code #loginStudent} ONLY after the password already matched
+ * (never before - an unauthenticated caller must not learn "this email exists but is
+ * deactivated" from a wrong-password guess) - see {@code entity/Parent.java#active}'s javadoc.
  */
 public enum QuizErrorCode implements ErrorCode {
 
@@ -58,7 +65,9 @@ public enum QuizErrorCode implements ErrorCode {
     QUESTION_CHOICES_REQUIRED("QUIZ_022", "A multiple-choice question needs at least 2 choices", HttpStatus.BAD_REQUEST),
     SPEAKING_ANSWER_INVALID_TYPE("QUIZ_023", "Speaking answer must be an MP3, M4A, WAV or OGG file", HttpStatus.BAD_REQUEST),
     SPEAKING_ANSWER_TOO_LARGE("QUIZ_024", "Speaking answer must be 10MB or smaller", HttpStatus.BAD_REQUEST),
-    QUESTION_NOT_SPEAKING_TYPE("QUIZ_025", "This question is not a speaking question", HttpStatus.BAD_REQUEST);
+    QUESTION_NOT_SPEAKING_TYPE("QUIZ_025", "This question is not a speaking question", HttpStatus.BAD_REQUEST),
+    REFRESH_TOKEN_INVALID("QUIZ_026", "Refresh token is unknown, expired, already used, or its account no longer exists", HttpStatus.UNAUTHORIZED),
+    ACCOUNT_DEACTIVATED("QUIZ_027", "This account has been deactivated by an administrator", HttpStatus.FORBIDDEN);
 
     private final String code;
     private final String message;

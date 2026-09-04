@@ -11,7 +11,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import vn.org.thn.service.app.quiz.entity.Admin;
+import vn.org.thn.service.app.quiz.entity.Parent;
+import vn.org.thn.service.app.quiz.entity.Student;
 import vn.org.thn.service.app.quiz.exception.QuizErrorCode;
+import vn.org.thn.service.app.quiz.repository.AdminRepository;
+import vn.org.thn.service.app.quiz.repository.ParentRepository;
+import vn.org.thn.service.app.quiz.repository.StudentRepository;
 import vn.org.thn.service.base.exception.CommonErrorCode;
 import vn.org.thn.service.base.exception.ErrorCode;
 import vn.org.thn.service.base.response.ApiResponse;
@@ -21,17 +27,26 @@ import java.io.IOException;
 
 /**
  * Verifies the {@code Authorization: Bearer <token>} header on every request under {@code
- * /api/parent/*}/{@code /api/student/*} (see registration + URL patterns in {@code
- * config/SecurityConfig}), modeled on {@code base}'s {@code RequestContextFilter} - a plain
+ * /api/parent/*}/{@code /api/student/*}/{@code /api/admin/*} (see registration + URL patterns in
+ * {@code config/SecurityConfig}), modeled on {@code base}'s {@code RequestContextFilter} - a plain
  * {@link Filter}, not full Spring Security, kept intentionally simple to match the rest of {@code
- * base}. {@code /api/auth/**} is never matched by this filter's URL patterns, so the 3 register/
- * login endpoints stay open.
+ * base}. {@code /api/auth/**} is never matched by this filter's URL patterns, so the register/
+ * login/refresh/logout endpoints stay open.
  * <p>
  * On success, stores the resolved {@link CurrentUser} as a request attribute for {@link
  * CurrentUser#get()} to read back in the Service layer. On failure, writes the standard {@link
  * ApiResponse} error envelope directly (this runs before the DispatcherServlet, so {@code
  * GlobalExceptionHandler} never sees a rejection here - it only handles exceptions thrown from
  * inside a controller method).
+ * <p>
+ * <b>tokenVersion re-check (2026-09-04):</b> a validly-signed, unexpired token is no longer
+ * enough on its own - after {@link JwtUtil#parse} succeeds, this filter loads the Parent/Student
+ * row by id and compares its current {@code tokenVersion} against the token's {@code tv} claim.
+ * This fixes the bug where a deleted account's (or a stale, backend-restart-surviving) token kept
+ * working: the row lookup itself fails once the account is gone, and the version compare fails
+ * once {@code AuthService#logoutAll()} (force-logout) has bumped it - either way every request
+ * after that point is rejected, not just ones after the token's own (now much shorter, see {@link
+ * JwtUtil}) natural expiry.
  */
 public class JwtAuthFilter implements Filter {
 
@@ -39,12 +54,19 @@ public class JwtAuthFilter implements Filter {
 
     private static final String PARENT_PREFIX = "/api/parent/";
     private static final String STUDENT_PREFIX = "/api/student/";
+    private static final String ADMIN_PREFIX = "/api/admin/";
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtUtil jwtUtil;
+    private final ParentRepository parentRepository;
+    private final StudentRepository studentRepository;
+    private final AdminRepository adminRepository;
 
-    public JwtAuthFilter(JwtUtil jwtUtil) {
+    public JwtAuthFilter(JwtUtil jwtUtil, ParentRepository parentRepository, StudentRepository studentRepository, AdminRepository adminRepository) {
         this.jwtUtil = jwtUtil;
+        this.parentRepository = parentRepository;
+        this.studentRepository = studentRepository;
+        this.adminRepository = adminRepository;
     }
 
     @Override
@@ -85,8 +107,38 @@ public class JwtAuthFilter implements Filter {
             return;
         }
 
+        if (!currentTokenVersionMatches(payload)) {
+            writeError(httpResponse, QuizErrorCode.UNAUTHORIZED,
+                    "Token no longer valid - the account was removed, or logged out from all devices");
+            return;
+        }
+
         httpRequest.setAttribute(CurrentUser.REQUEST_ATTRIBUTE, new CurrentUser(payload.userId(), payload.role()));
         chain.doFilter(request, response);
+    }
+
+    /**
+     * Re-checks {@code payload} against the CURRENT state of its owning Parent/Student row - true
+     * only if the row still exists AND its {@code tokenVersion} still matches the token's {@code
+     * tv} claim. See this class's javadoc ("tokenVersion re-check") for why this DB hit happens
+     * on every request instead of trusting the JWT signature/expiry alone.
+     */
+    private boolean currentTokenVersionMatches(JwtUtil.Payload payload) {
+        if (payload.role() == Role.PARENT) {
+            Parent parent = parentRepository.findById(payload.userId());
+            // .isActive() too (2026-09-04, Admin feature) - a Parent an Admin just deactivated
+            // must be rejected here on their very next request, not just at their next login;
+            // see entity/Parent.java#active's javadoc for why this alone is enough (no separate
+            // per-request check needed for their Students - AdminParentService#setActive(false)
+            // already bumps every Student's own tokenVersion in the same call).
+            return parent != null && parent.isActive() && parent.getTokenVersion() == payload.tokenVersion();
+        }
+        if (payload.role() == Role.STUDENT) {
+            Student student = studentRepository.findById(payload.userId());
+            return student != null && student.getTokenVersion() == payload.tokenVersion();
+        }
+        Admin admin = adminRepository.findById(payload.userId());
+        return admin != null && admin.getTokenVersion() == payload.tokenVersion();
     }
 
     /** Which role a URI requires, from its {@code /api/parent/}/{@code /api/student/} prefix - null if neither (should not happen, see caller). */
@@ -96,6 +148,9 @@ public class JwtAuthFilter implements Filter {
         }
         if (uri.startsWith(STUDENT_PREFIX)) {
             return Role.STUDENT;
+        }
+        if (uri.startsWith(ADMIN_PREFIX)) {
+            return Role.ADMIN;
         }
         return null;
     }

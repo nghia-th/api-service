@@ -43,4 +43,26 @@ public class Parent extends BaseEntity {
     private String password;
 
     private String phone;
+
+    /**
+     * Bumped by {@code AuthService#logoutAll()} (force-logout) - every already-issued access
+     * token for this Parent embeds the tokenVersion it was minted with, and {@code
+     * JwtAuthFilter} rejects a request whose token's version no longer matches this column. This
+     * is also what fixes the "deleted account's old token still works" bug: {@code
+     * JwtAuthFilter} loads this row by id on every request, so a Parent that no longer exists
+     * (row gone) fails that lookup outright, token version aside.
+     */
+    private int tokenVersion = 0;
+
+    /**
+     * Whether an Admin has this account enabled (2026-09-04 - see {@code AdminParentService}).
+     * Checked at login time ({@code AuthService#loginParent}/{@code #loginStudent}, the latter
+     * via the student's OWN parent - deactivating a Parent blocks their Students' logins too,
+     * since Parent is the tenant boundary, see this class's own javadoc). An already-logged-in
+     * session is cut off within the SAME request cycle as deactivation, not just at next login -
+     * {@code AdminParentService#setActive(false)} bumps {@code tokenVersion} for the Parent AND
+     * every one of their Students in the same call, and {@code JwtAuthFilter} re-checks
+     * tokenVersion on every request regardless of this flag.
+     */
+    private boolean active = true;
 }

@@ -24,12 +24,12 @@ mybatis:
 
 base:
   database:
-    type: SQLITE              # SQLITE / POSTGRESQL / MYSQL / SQLSERVER / ORACLE (mac dinh SQLITE)
+    type: POSTGRESQL              # SQLITE / POSTGRESQL / MYSQL / SQLSERVER / ORACLE (mac dinh SQLITE)
     db-name: quiz_db              # ten database thuc te (mac dinh "app")
     dbPrefix: dev                 # ghep truoc db-name -> "dev_quiz_db" (mac dinh rong "")
     sql-log: OFF                  # OFF / BASIC / FULL (mac dinh OFF)
     pool:
-      max-pool-size: 1            # HikariCP (mac dinh 5) //sqlite set 1
+      max-pool-size: 5            # HikariCP (mac dinh 5) //sqlite set 1
       min-idle: 1                 # HikariCP (mac dinh 1)
     postgresql:
       host: localhost             # mac dinh localhost
@@ -54,12 +54,29 @@ lang:
   support: vi,en
   react-build: build
 
-# Auth (task 1) - quiz-service-only config, not part of base.
+# Auth (task 1, extended 2026-09-04 with refresh tokens/force-logout - see AuthService's javadoc)
+# - quiz-service-only config, not part of base.
 quiz:
   jwt:
     # DEV ONLY placeholder (32+ chars, required for HMAC-SHA256) - replace with a real secret
     # via an env-specific override (env var / profile) before any non-local deployment. Never
     # commit a real production secret here.
     secret: "quiz-service-dev-only-jwt-secret-change-me-32bytes-min"
-    expiration-minutes: 1440   # 24h
+    # Access token lifetime - shortened from the old 24h (`expiration-minutes`) now that a
+    # refresh token exists to silently renew it (see QuizApiService.ts's 401 handler); a short
+    # lifetime shrinks how long a stolen access token stays useful without costing the user
+    # re-logins under normal use.
+    access-token-expiration-minutes: 60
+    # Refresh token lifetime - stored hashed in the refresh_token table (not a JWT, see JwtUtil),
+    # rotated on every use (AuthService#refresh). A user idle longer than this must log in again.
+    refresh-token-expiration-days: 30
+  admin:
+    # DEV ONLY placeholders, same warning as quiz.jwt.secret above - override both via an
+    # env-specific config before any non-local deployment, and change the password immediately
+    # after first login (there is no "change own password" endpoint yet in v1). Read once at
+    # startup by AdminBootstrapRunner to create the FIRST Admin row if the admin table is still
+    # empty - changing these after that first row already exists has no effect (see that class's
+    # javadoc for why).
+    bootstrap-email: "admin@example.com"
+    bootstrap-password: "ChangeMe123!"
 

@@ -41,4 +41,7 @@ public class Student extends BaseEntity {
 
     @ToString.Exclude
     private String password;
+
+    /** Same purpose as {@link Parent#getTokenVersion()} - see that field's javadoc. */
+    private int tokenVersion = 0;
 }
