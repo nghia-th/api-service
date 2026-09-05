@@ -80,7 +80,7 @@ public class TestApi extends BaseCtl {
 
     @Operation(
             summary = "Download the practice-test bulk import template",
-            description = "Returns a ready-to-fill Excel (default) or CSV file with the fixed 3-column layout (Ten dang nhap hoc sinh/Ten mon hoc/So cau hoi) plus one illustrative example row, which the import endpoint recognizes and skips automatically whether or not it is deleted before uploading. Same shape as LessonApi#importTemplate."
+            description = "Returns a ready-to-fill Excel (default) or CSV file with the fixed 2-column layout (Ten dang nhap hoc sinh/So cau hoi, 2026-09-05 - Subject dropped from the file, chosen once as a query param on the import call itself instead) plus one illustrative example row, which the import endpoint recognizes and skips automatically whether or not it is deleted before uploading. Same shape as LessonApi#importTemplate."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the template file (Content-Type set per the requested format)")
@@ -97,16 +97,19 @@ public class TestApi extends BaseCtl {
 
     @Operation(
             summary = "Bulk-generate practice tests (Ôn tập) from an Excel/CSV file",
-            description = "Best-effort per row - one bad row does not stop the others in the same file. Each row names its own Student (by login username) and Subject (by name) - unlike the single POST /api/parent/tests/practice call, a bulk import can span many different Students/Subjects in one file. Every row still gets a freshly-randomized question set from TestService#generatePractice, exactly like the single-call button - this is NOT a mode for hand-picking specific questions via the file."
+            description = "Best-effort per row - one bad row does not stop the others in the same file. subjectId is fixed for the WHOLE file (2026-09-05, per the user's clarification \"mỗi lần import một đề ôn theo môn\" - one import always targets one Subject) and is checked up front, before the file is even read - each row only names its own Student (by login username). Every row still gets a freshly-randomized question set from TestService#generatePractice, exactly like the single-call button - this is NOT a mode for hand-picking specific questions via the file."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "File was read - check the response body for per-row errors, if any (this is 200 even when some/all rows failed, since the request itself succeeded)"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "File could not be read at all (wrong format/corrupt/empty), or has more rows than the per-import limit - QUIZ_012 or QUIZ_011")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "File could not be read at all (wrong format/corrupt/empty), or has more rows than the per-import limit - QUIZ_012 or QUIZ_011"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "subjectId belongs to another parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No subject with this subjectId - COMMON_005 NOT_FOUND")
     })
     @PostMapping(value = "/practice/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<PracticeImportResponse>> practiceImportFile(
+            @Parameter(description = "Subject id every imported practice test is generated from") @RequestParam Long subjectId,
             @Parameter(description = "The .xlsx or .csv file, filled in from the downloaded template") @RequestPart MultipartFile file) {
-        return ok(practiceImportService.importFile(file));
+        return ok(practiceImportService.importFile(subjectId, file));
     }
 
     @Operation(

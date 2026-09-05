@@ -18,7 +18,6 @@ import vn.org.thn.service.app.quiz.dto.TemplateFile;
 import vn.org.thn.service.app.quiz.entity.Student;
 import vn.org.thn.service.app.quiz.entity.Subject;
 import vn.org.thn.service.app.quiz.repository.StudentRepository;
-import vn.org.thn.service.app.quiz.repository.SubjectRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.base.IBase;
 import vn.org.thn.service.base.exception.BaseException;
@@ -46,20 +45,23 @@ import static vn.org.thn.service.app.quiz.exception.QuizErrorCode.IMPORT_TOO_MAN
  * via the file (that alternative was explicitly rejected when this feature was scoped): each row
  * still gets a freshly-randomized question set exactly like the existing hand-triggered "Ôn tập"
  * button, by delegating straight to {@link TestService#generatePractice} - this class only
- * resolves each row's Student/Subject NAMES into ids and builds the same {@link
- * PracticeGenerateRequest} that button already sends.
+ * resolves each row's Student NAME into an id and builds the same {@link PracticeGenerateRequest}
+ * that button already sends.
  * <p>
- * <b>Row shape - Student + Subject + question count</b> (per the user's explicit scoping
- * decision): unlike {@code QuestionImportService}/{@code LessonImportService} (both scoped to one
- * fixed {@code subjectId} passed as a query param, since a Parent imports into ONE subject/lesson
- * at a time), a practice-test import can span MANY different Students and Subjects in the same
- * file - there is no single owning parent-scoped id to pass up front, so every row must name its
- * own Student and Subject. A Parent has no reason to know internal numeric ids, so rows reference
- * them by the names/handles the Parent already knows: the Student's LOGIN USERNAME (unique
- * system-wide - see {@code AuthService#loginStudent}, which looks it up the same way with no
- * additional scoping) and the Subject's NAME (not enforced unique - if a Parent happens to have 2
- * Subjects with the identical name in the same Classroom, the first match is used; this mirrors
- * how a human reading the same ambiguous name would have to just pick one).
+ * <b>Row shape - Student + question count ONLY (2026-09-05, revised)</b>: the Subject is now
+ * chosen ONCE, up front, as a query param on the import call itself - {@code subjectId} - exactly
+ * like {@link LessonImportService}/{@code QuestionImportService} already do, instead of every row
+ * naming its own Subject by name (the original 2026-09-04 design). Per the user's explicit
+ * clarification ("mỗi lần import một đề ôn theo môn" - "each import is one practice test PER
+ * SUBJECT"): one import file always targets exactly one Subject, but can still span MANY
+ * Students (every row is Student + optional question count only) - {@code subjectId} ownership is
+ * checked ONCE before the file is even read (see {@link #importFile}), then every row only needs
+ * to resolve its own Student and check that Student's Classroom matches {@code subjectId}'s
+ * Classroom (mirrors {@link TestService#generatePractice}'s own "Subject must be in the Student's
+ * Classroom" rule, so a row can never resolve a Student that call would reject anyway). A Parent
+ * has no reason to know internal numeric ids, so each row references its Student by the STUDENT'S
+ * LOGIN USERNAME (unique system-wide - see {@code AuthService#loginStudent}, which looks it up the
+ * same way with no additional scoping).
  * <p>
  * LANGUAGE NOTE (same rule as {@code QuestionImportService}, read there for the full reasoning):
  * the template's column headers/example row and each {@link ImportRowError#getReason()} message
@@ -75,19 +77,20 @@ public class PracticeImportService extends IBase {
     /** Same "mark the example row, skip it silently whether or not the parent deletes it" choice as {@code QuestionImportService#EXAMPLE_ROW_MARKER}. */
     private static final String EXAMPLE_ROW_MARKER = "[VÍ DỤ - XOÁ DÒNG NÀY TRƯỚC KHI IMPORT THẬT] ";
 
+    /** 2 columns now (2026-09-05) - Subject dropped from the file, see this class's javadoc. */
     private static final String[] HEADERS = {
-            "Tên đăng nhập học sinh", "Tên môn học", "Số câu hỏi (bỏ trống = mặc định)"
+            "Tên đăng nhập học sinh", "Số câu hỏi (bỏ trống = mặc định)"
     };
 
     private static final String[] EXAMPLE_ROW = {
-            EXAMPLE_ROW_MARKER + "hs_minhanh", "Toán", "10"
+            EXAMPLE_ROW_MARKER + "hs_minhanh", "10"
     };
 
     @Autowired
     private StudentRepository studentRepository;
 
     @Autowired
-    private SubjectRepository subjectRepository;
+    private SubjectService subjectService;
 
     @Autowired
     private TestService testService;
@@ -96,7 +99,7 @@ public class PracticeImportService extends IBase {
     private record ParsedRow(int rowNumber, String[] cells) {
     }
 
-    /** Builds the downloadable template file - "xlsx" (default) or "csv". */
+    /** Builds the downloadable template file - "xlsx" (default) or "csv". Not Subject-specific - the same 2-column template works for importing into any Subject. */
     public TemplateFile generateTemplate(String format) {
         if ("csv".equalsIgnoreCase(format)) {
             return new TemplateFile(buildCsvTemplate(), "text/csv;charset=UTF-8", "practice-test-import-template.csv");
@@ -105,13 +108,15 @@ public class PracticeImportService extends IBase {
     }
 
     /**
-     * Best-effort row-by-row import for the CURRENT Parent ({@link CurrentUser#get()}) - one bad
-     * row does not stop the others, same shape as {@code QuestionImportService#importFile}.
-     * Unlike that method, there is no single up-front ownership check: every row resolves (and
-     * ownership-checks) its OWN Student/Subject, since rows can span many of each.
+     * Best-effort row-by-row import for the CURRENT Parent ({@link CurrentUser#get()}), all rows
+     * generating practice Tests from the SAME {@code subjectId} - one bad row does not stop the
+     * others, same shape as {@code QuestionImportService#importFile}. {@code subjectId} ownership
+     * is checked once, up front, before the file is even read (same convention as {@code
+     * LessonImportService#importFile}).
      */
-    public PracticeImportResponse importFile(MultipartFile file) {
+    public PracticeImportResponse importFile(Long subjectId, MultipartFile file) {
         Long parentId = CurrentUser.get().userId();
+        Subject subject = subjectService.getOwnedOrThrow(subjectId, parentId);
 
         List<ParsedRow> rows = readRows(file);
         List<String[]> dataRows = new ArrayList<>();
@@ -133,7 +138,7 @@ public class PracticeImportService extends IBase {
         int successCount = 0;
         List<ImportRowError> errors = new ArrayList<>();
         for (int i = 0; i < dataRows.size(); i++) {
-            String reason = importRow(parentId, dataRows.get(i));
+            String reason = importRow(parentId, subject, dataRows.get(i));
             if (reason == null) {
                 successCount++;
             } else {
@@ -145,28 +150,25 @@ public class PracticeImportService extends IBase {
         response.setTotalRows(dataRows.size());
         response.setSuccessCount(successCount);
         response.setErrors(errors);
-        logInfo("Practice test import: parentId={}, totalRows={}, successCount={}, errorCount={}",
-                parentId, dataRows.size(), successCount, errors.size());
+        logInfo("Practice test import: parentId={}, subjectId={}, totalRows={}, successCount={}, errorCount={}",
+                parentId, subjectId, dataRows.size(), successCount, errors.size());
         return response;
     }
 
     /**
-     * Validates, resolves and, if valid, generates one practice Test for one data row. Returns
-     * null on success, or a Vietnamese error message describing why the row was rejected -
-     * including {@link BusinessException}s from {@link TestService#generatePractice} itself (e.g.
-     * the resolved Subject having no questions at all yet), which are caught here and turned into
-     * a per-row error exactly like a validation failure, rather than aborting the whole file.
+     * Validates, resolves and, if valid, generates one practice Test for one data row against the
+     * already-resolved {@code subject}. Returns null on success, or a Vietnamese error message
+     * describing why the row was rejected - including {@link BusinessException}s from {@link
+     * TestService#generatePractice} itself (e.g. the resolved Subject having no questions at all
+     * yet), which are caught here and turned into a per-row error exactly like a validation
+     * failure, rather than aborting the whole file.
      */
-    private String importRow(Long parentId, String[] row) {
+    private String importRow(Long parentId, Subject subject, String[] row) {
         String username = row[0].trim();
-        String subjectName = row[1].trim();
-        String questionCountRaw = row[2].trim();
+        String questionCountRaw = row[1].trim();
 
         if (username.isEmpty()) {
             return "Thiếu tên đăng nhập học sinh (cột A)";
-        }
-        if (subjectName.isEmpty()) {
-            return "Thiếu tên môn học (cột B)";
         }
 
         // Username is the Student's unique login handle system-wide (see
@@ -178,15 +180,12 @@ public class PracticeImportService extends IBase {
             return "Không tìm thấy học sinh với tên đăng nhập \"" + username + "\" thuộc tài khoản của anh";
         }
 
-        // Scoped to the Student's own Classroom, not the whole Parent's Subjects - matches
-        // TestService#generatePractice's own "Subject must be in the Student's Classroom" rule,
-        // so a row can never resolve a Subject that call would reject anyway.
-        Subject subject = subjectRepository.query()
-                .eq(Subject::getClassroomId, student.getClassroomId())
-                .eq(Subject::getName, subjectName)
-                .one();
-        if (subject == null) {
-            return "Không tìm thấy môn học \"" + subjectName + "\" trong lớp của học sinh \"" + username + "\"";
+        // subjectId is fixed for the whole file (2026-09-05) - every row's Student must be in
+        // THAT Subject's own Classroom, matching TestService#generatePractice's own "Subject must
+        // be in the Student's Classroom" rule, so a row can never resolve a Student that call
+        // would reject anyway.
+        if (!subject.getClassroomId().equals(student.getClassroomId())) {
+            return "Học sinh \"" + username + "\" không thuộc lớp có môn học này";
         }
 
         Integer questionCount = null;
@@ -194,10 +193,10 @@ public class PracticeImportService extends IBase {
             try {
                 questionCount = Integer.parseInt(questionCountRaw);
             } catch (NumberFormatException e) {
-                return "Số câu hỏi (cột C) phải là số, nhận được: \"" + questionCountRaw + "\"";
+                return "Số câu hỏi (cột B) phải là số, nhận được: \"" + questionCountRaw + "\"";
             }
             if (questionCount <= 0) {
-                return "Số câu hỏi (cột C) phải là số dương, nhận được: " + questionCount;
+                return "Số câu hỏi (cột B) phải là số dương, nhận được: " + questionCount;
             }
         }
 
@@ -228,7 +227,7 @@ public class PracticeImportService extends IBase {
         return row[0].startsWith(EXAMPLE_ROW_MARKER);
     }
 
-    /** Reads every row of {@code file} (including the header) as fixed-width 3-column string arrays, dispatching on the original filename's extension. */
+    /** Reads every row of {@code file} (including the header) as fixed-width 2-column string arrays, dispatching on the original filename's extension. */
     private List<ParsedRow> readRows(MultipartFile file) {
         String filename = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase();
         try {
@@ -253,8 +252,8 @@ public class PracticeImportService extends IBase {
         try (XSSFWorkbook workbook = new XSSFWorkbook(inputStream)) {
             Sheet sheet = workbook.getSheetAt(0);
             for (Row row : sheet) {
-                String[] cells = new String[3];
-                for (int col = 0; col < 3; col++) {
+                String[] cells = new String[2];
+                for (int col = 0; col < 2; col++) {
                     Cell cell = row.getCell(col);
                     cells[col] = cell == null ? "" : formatter.formatCellValue(cell).trim();
                 }
@@ -272,8 +271,8 @@ public class PracticeImportService extends IBase {
         CSVFormat format = CSVFormat.DEFAULT.builder().setIgnoreEmptyLines(false).build();
         try (CSVParser parser = format.parse(new java.io.InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
             for (org.apache.commons.csv.CSVRecord record : parser) {
-                String[] cells = new String[3];
-                for (int col = 0; col < 3; col++) {
+                String[] cells = new String[2];
+                for (int col = 0; col < 2; col++) {
                     cells[col] = col < record.size() ? record.get(col).trim() : "";
                 }
                 rows.add(new ParsedRow((int) record.getRecordNumber(), cells));

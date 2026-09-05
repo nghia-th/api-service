@@ -12,9 +12,11 @@ import vn.org.thn.service.base.entity.BaseEntity;
 
 /**
  * An administrator account (2026-09-04) - manages Parent accounts (list/create/activate-
- * deactivate/delete, see {@code AdminParentApi}), and nothing else in v1 (no Admin-vs-Admin
- * management, no permission levels - a single flat role, same as {@link Parent}/{@link Student}
- * each being their own flat role).
+ * deactivate/reset-password/delete, see {@code AdminParentApi}). Since 2026-09-05, Admins also
+ * manage OTHER Admin accounts (list/create/delete, see {@code AdminManageApi}) - but that is
+ * root-only (see {@code root} below), so a regular (non-root) Admin is still a single flat role
+ * with no further permission tiers of its own, same as {@link Parent}/{@link Student} each being
+ * their own flat role.
  * <p>
  * <b>No self-registration</b> - unlike Parent, there is no {@code POST /api/auth/admin/register}.
  * The first (and, in v1, only) Admin row is created at startup by {@code
@@ -25,12 +27,14 @@ import vn.org.thn.service.base.entity.BaseEntity;
  * a "create admin" endpoint with).
  * <p>
  * <b>{@code root} (2026-09-04):</b> true ONLY for that one bootstrap-created account - marks it
- * as protected from deletion. There is no Admin-delete-Admin endpoint in v1 at all (Admin only
- * manages Parents, see this class's own javadoc above), so this flag has no enforcement code to
- * point to yet - it exists so that WHENEVER such a feature is added later, the guard is "don't
- * allow deleting a row where {@code root=true}", decided and recorded now rather than left as a
- * gap someone has to remember. This account's PASSWORD can still be changed (see 2026-09-04's
- * change-password feature) - only deletion is blocked by this flag.
+ * as the highest-ranking Admin, per the user's explicit request ("root la tai khoan cao nhat").
+ * Enforced two ways since 2026-09-05's Admin-manages-Admin feature ({@code AdminManageService}):
+ * (1) every {@code /api/admin/admins/**} endpoint (list/create/delete OTHER Admin accounts) is
+ * root-only - a non-root Admin's token gets {@code CommonErrorCode.FORBIDDEN}, see {@code
+ * AdminManageService#requireRoot}; (2) a row where {@code root=true} can never be deleted through
+ * that endpoint EITHER, not even by itself - see {@code AdminManageService#delete} and {@code
+ * QuizErrorCode#ROOT_ADMIN_CANNOT_BE_DELETED}. This account's PASSWORD can still be changed (see
+ * 2026-09-04's change-password feature) - only deletion is blocked by this flag.
  * <p>
  * {@code tokenVersion} - same purpose/mechanism as {@link Parent#getTokenVersion()}/{@link
  * Student#getTokenVersion()} (force-logout, see {@code AuthService}'s javadoc) - included here
