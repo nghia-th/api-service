@@ -126,13 +126,19 @@ public class SubjectService extends IBase {
 
     /** Loads the Subject with id {@code id}, throwing if it doesn't exist or its Classroom doesn't belong to {@code parentId}. Also used by {@link LessonService} to resolve a Lesson's indirect owner. */
     Subject getOwnedOrThrow(Long id, Long parentId) {
+        Subject subject = getById(id);
+        // Resolves ownership through the owning Classroom - throws NOT_FOUND/FORBIDDEN the same
+        // way a direct Subject.parentId check would, if that column still existed.
+        classroomService.getOwnedOrThrow(subject.getClassroomId(), parentId);
+        return subject;
+    }
+
+    /** Loads the Subject with id {@code id} with NO ownership check at all. Package-private (2026-09-05) so {@code StudentLibraryService} can resolve it after doing its own (Parent-unrelated) Student->Classroom accessibility check - same "getById + caller does its own check" shape {@code LessonService#getById} already established for {@code StudentLessonService}. */
+    Subject getById(Long id) {
         Subject subject = subjectRepository.findById(id);
         if (subject == null) {
             throw new BusinessException(CommonErrorCode.NOT_FOUND, "Subject not found");
         }
-        // Resolves ownership through the owning Classroom - throws NOT_FOUND/FORBIDDEN the same
-        // way a direct Subject.parentId check would, if that column still existed.
-        classroomService.getOwnedOrThrow(subject.getClassroomId(), parentId);
         return subject;
     }
 }

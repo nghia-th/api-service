@@ -51,7 +51,11 @@ import vn.org.thn.service.base.exception.ErrorCode;
  * root") guards {@code AdminManageService#delete} - deliberately its OWN code rather than reusing
  * {@code CommonErrorCode.FORBIDDEN} (used by that same method for the OTHER rule, "caller is not
  * root"): this is a different failure reason (caller IS root, but the TARGET row is the protected
- * one), so the frontend/log can tell the two apart.
+ * one), so the frontend/log can tell the two apart. {@code LIBRARY_INVALID_TAXONOMY}/{@code
+ * LIBRARY_PDF_INVALID_TYPE}/{@code LIBRARY_PDF_TOO_LARGE}/{@code LIBRARY_ALREADY_LINKED}
+ * (QUIZ_032-035, added 2026-09-05 for the "thu vien sach giao khoa" textbook-library feature)
+ * guard {@code LibraryService#upload} (first 3) and {@code ParentLibraryService#link} (last one) -
+ * see {@code LibraryService}'s javadoc for the full feature.
  */
 public enum QuizErrorCode implements ErrorCode {
 
@@ -85,7 +89,11 @@ public enum QuizErrorCode implements ErrorCode {
     QUESTION_VIDEO_INVALID_TYPE("QUIZ_028", "Question video must be an MP4, WebM, MOV or OGG file", HttpStatus.BAD_REQUEST),
     QUESTION_VIDEO_TOO_LARGE("QUIZ_029", "Question video must be 50MB or smaller", HttpStatus.BAD_REQUEST),
     OLD_PASSWORD_INCORRECT("QUIZ_030", "Current password is incorrect", HttpStatus.BAD_REQUEST),
-    ROOT_ADMIN_CANNOT_BE_DELETED("QUIZ_031", "Root admin account cannot be deleted", HttpStatus.CONFLICT);
+    ROOT_ADMIN_CANNOT_BE_DELETED("QUIZ_031", "Root admin account cannot be deleted", HttpStatus.CONFLICT),
+    LIBRARY_INVALID_TAXONOMY("QUIZ_032", "Grade must be between 1 and 12, and curriculum must be one of the fixed list", HttpStatus.BAD_REQUEST),
+    LIBRARY_PDF_INVALID_TYPE("QUIZ_033", "Library document must be a PDF file", HttpStatus.BAD_REQUEST),
+    LIBRARY_PDF_TOO_LARGE("QUIZ_034", "Library document must be 50MB or smaller", HttpStatus.BAD_REQUEST),
+    LIBRARY_ALREADY_LINKED("QUIZ_035", "This subject is already linked to this document", HttpStatus.CONFLICT);
 
     private final String code;
     private final String message;
