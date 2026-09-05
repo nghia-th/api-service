@@ -39,3 +39,4 @@ out/
 
 ### Runtime-generated (lesson images etc, see LessonService) ###
 /uploads/
+/data
