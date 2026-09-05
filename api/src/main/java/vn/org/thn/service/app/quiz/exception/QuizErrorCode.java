@@ -118,7 +118,10 @@ public enum QuizErrorCode implements ErrorCode {
     CURRICULUM_NAME_TAKEN("QUIZ_036", "A curriculum with this name already exists", HttpStatus.CONFLICT),
     CURRICULUM_IN_USE("QUIZ_037", "Curriculum is still used by a library document - reassign or delete it first", HttpStatus.CONFLICT),
     ATTEMPT_NOT_ALL_ANSWERED("QUIZ_038", "All questions must be answered before submitting", HttpStatus.BAD_REQUEST),
-    LESSON_SELECTION_NO_QUESTIONS("QUIZ_039", "The selected lessons have no questions yet", HttpStatus.BAD_REQUEST);
+    LESSON_SELECTION_NO_QUESTIONS("QUIZ_039", "The selected lessons have no questions yet", HttpStatus.BAD_REQUEST),
+    LESSON_REPORT_SUBJECT_NOT_TODAY("QUIZ_040", "This lesson's subject is not on today's timetable", HttpStatus.BAD_REQUEST),
+    LESSON_ALREADY_REPORTED("QUIZ_041", "This lesson has already been reported as studied", HttpStatus.CONFLICT),
+    LESSON_REPORT_LOCKED("QUIZ_042", "Only a lesson reported today can be undone", HttpStatus.CONFLICT);
 
     private final String code;
     private final String message;
