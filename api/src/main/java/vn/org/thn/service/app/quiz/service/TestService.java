@@ -34,7 +34,10 @@ import vn.org.thn.service.base.exception.CommonErrorCode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Test creation/listing/deletion for the currently logged-in Parent (task 5). Creating a Test
@@ -136,15 +139,22 @@ public class TestService extends IBase {
     }
 
     /**
-     * Creates and assigns a REGULAR Test the same way {@link #create} does, but from whole
-     * Lessons instead of hand-picked Questions (2026-09-05, item 3/11 of the 11-item batch
-     * request - see {@link TestCreateFromLessonsRequest}'s javadoc for the full design). Every
-     * Question under every selected Lesson is included (no SPEAKING exclusion here - unlike
-     * {@link #doGeneratePractice}, the user's own wording for this feature was "lay tat ca cac
-     * cau hoi" (take ALL the questions), with no "trac nghiem only" qualifier like the "On tap
-     * kien thuc" feature had - flagged here as a judgment call made without asking again, for
-     * review) then shuffled, same "Collections.shuffle, no existing precedent to match beyond
-     * this class's own {@link #doGeneratePractice}" approach.
+     * Creates and assigns a REGULAR Test the same way {@link #create} does, but scoped to whole
+     * Lessons instead of one Lesson (2026-09-05, item 3/11 of the 11-item batch request - see
+     * {@link TestCreateFromLessonsRequest}'s javadoc for the full design, including the
+     * 2026-09-06 revision below).
+     * <p>
+     * <b>2026-09-06 revision</b> - the original version of this method auto-included EVERY
+     * Question under every selected Lesson, with no way for the Parent to leave any out. Per the
+     * user's follow-up feedback after testing ("chưa thấy danh sách câu hỏi ... để phụ huynh chọn
+     * câu hỏi cho đề kiểm tra"), {@code lessonIds} is now only the SCOPE (which Questions are
+     * allowed to be picked from), and {@code request.getQuestionIds()} carries the Parent's
+     * actual hand-picked set - same "server re-validates, never trusts the client" posture as
+     * every other submit in this class: each {@code questionId} is checked against the combined
+     * pool of the (already ownership/classroom-checked) {@code lessonIds} before being used, so a
+     * tampered request naming a Question from an un-selected Lesson is rejected exactly like a
+     * tampered {@code lessonId} always was. The final display order is still shuffled
+     * server-side, unchanged from the pre-revision behavior.
      * <p>
      * Each {@code lessonId} is ownership-checked via {@link LessonService#getOwnedOrThrow} AND
      * cross-checked against the student's OWN classroom (its owning Subject's {@code
@@ -159,18 +169,29 @@ public class TestService extends IBase {
         Long parentId = CurrentUser.get().userId();
         Student student = studentService.getOwnedOrThrow(request.getStudentId(), parentId);
 
-        List<Long> questionIds = new ArrayList<>();
+        // Pool cho phép chọn câu hỏi (2026-09-06 revision) - KHÔNG còn là "danh sách sẽ đưa hết
+        // vào đề" nữa, chỉ dùng để validate request.getQuestionIds() bên dưới.
+        Set<Long> allowedQuestionIds = new HashSet<>();
         for (Long lessonId : request.getLessonIds()) {
             Lesson lesson = lessonService.getOwnedOrThrow(lessonId, parentId);
             Subject subject = subjectService.getById(lesson.getSubjectId());
             if (!subject.getClassroomId().equals(student.getClassroomId())) {
                 throw new BusinessException(CommonErrorCode.FORBIDDEN, "This lesson is not in the student's classroom");
             }
-            questionIds.addAll(questionRepository.query().eq(Question::getLessonId, lessonId).list()
+            allowedQuestionIds.addAll(questionRepository.query().eq(Question::getLessonId, lessonId).list()
                     .stream().map(Question::getId).toList());
         }
-        if (questionIds.isEmpty()) {
+        if (allowedQuestionIds.isEmpty()) {
             throw new BusinessException(QuizErrorCode.LESSON_SELECTION_NO_QUESTIONS);
+        }
+
+        // LinkedHashSet chỉ để loại trùng nếu request lỡ gửi trùng id, thứ tự không quan trọng vì
+        // shuffle ngay bên dưới. Mỗi id PHẢI nằm trong allowedQuestionIds - không tin request.
+        List<Long> questionIds = new ArrayList<>(new LinkedHashSet<>(request.getQuestionIds()));
+        for (Long questionId : questionIds) {
+            if (!allowedQuestionIds.contains(questionId)) {
+                throw new BusinessException(CommonErrorCode.FORBIDDEN, "This question is not in the selected lessons");
+            }
         }
         Collections.shuffle(questionIds);
 

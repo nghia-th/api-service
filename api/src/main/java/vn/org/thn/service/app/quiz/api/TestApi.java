@@ -66,12 +66,12 @@ public class TestApi extends BaseCtl {
 
     @Operation(
             summary = "Create and assign a test from whole Lessons",
-            description = "Parallel creation mode alongside the hand-pick-each-question POST above (2026-09-05, item 3/11) - picks EVERY question under the given lessonIds, shuffles them, and creates a REGULAR test assigned immediately (status ASSIGNED). Each lessonId must belong to the current parent and be in the student's own classroom."
+            description = "Parallel creation mode alongside the hand-pick-each-question POST above (2026-09-05, item 3/11) - the Parent picks lessonIds to SCOPE the question pool, then hand-picks the exact questionIds to include from that pool (2026-09-06 revision - originally auto-included every question under lessonIds, changed so the Parent can leave some out), shuffles the picked questions, and creates a REGULAR test assigned immediately (status ASSIGNED). Each lessonId must belong to the current parent and be in the student's own classroom; each questionId must belong to one of lessonIds."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Created successfully - returns the new Test"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "A required field is missing, lessonIds is empty, or the selected lessons have no questions - COMMON_001 or QUIZ_039"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "studentId or one of lessonIds belongs to another parent, or a lesson is not in the student's classroom - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "A required field is missing, lessonIds/questionIds is empty, or the selected lessons have no questions - COMMON_001 or QUIZ_039"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "studentId or one of lessonIds belongs to another parent, a lesson is not in the student's classroom, or a questionId is not in the selected lessons - COMMON_004 FORBIDDEN"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No student or lesson with the given id - COMMON_005 NOT_FOUND")
     })
     @PostMapping("/from-lessons")
