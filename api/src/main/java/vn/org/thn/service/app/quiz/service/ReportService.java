@@ -28,6 +28,8 @@ import vn.org.thn.service.base.IBase;
 import vn.org.thn.service.base.exception.BusinessException;
 import vn.org.thn.service.base.exception.CommonErrorCode;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -171,6 +173,21 @@ public class ReportService extends IBase {
 
     /** A Student's test history - submitted attempts only, newest first (see {@link StudentAttemptHistoryItem}'s javadoc for the "submitted only" assumption). */
     public List<StudentAttemptHistoryItem> getStudentAttemptHistory(Long studentId) {
+        return getStudentAttemptHistory(studentId, null, null);
+    }
+
+    /**
+     * Same as {@link #getStudentAttemptHistory(Long)} but narrowed to a date range - added
+     * 2026-09-05 (item 8 of the 11-item batch, "phu huynh xem duoc lich su hoc tap cua con trong 1
+     * tuan") so the Parent-facing Reports page can show just the current week instead of the
+     * entire history. {@code from}/{@code to} are both INCLUSIVE calendar dates in the server's
+     * local time zone (matching {@link Attempt#getSubmittedAt()}, a plain {@code LocalDateTime}
+     * with no zone info stored anywhere else in this codebase) - either or both may be {@code
+     * null} to leave that end of the range open, so passing neither reproduces the original
+     * unfiltered behavior exactly (kept as the public 1-arg overload above for every existing
+     * caller).
+     */
+    public List<StudentAttemptHistoryItem> getStudentAttemptHistory(Long studentId, LocalDate from, LocalDate to) {
         Long parentId = CurrentUser.get().userId();
         studentService.getOwnedOrThrow(studentId, parentId);
 
@@ -181,8 +198,16 @@ public class ReportService extends IBase {
             testById.put(test.getId(), test);
         }
 
+        // to.plusDays(1).atStartOfDay() (exclusive upper bound) rather than to.atTime(23,59,59) -
+        // simpler and correct down to the nanosecond, same "exclusive next-day boundary" shape as
+        // StudentTimetableService's date handling.
+        LocalDateTime fromInclusive = from == null ? null : from.atStartOfDay();
+        LocalDateTime toExclusive = to == null ? null : to.plusDays(1).atStartOfDay();
+
         return attemptRepository.query().eq(Attempt::getStudentId, studentId).list().stream()
                 .filter(attempt -> attempt.getSubmittedAt() != null && testById.containsKey(attempt.getTestId()))
+                .filter(attempt -> fromInclusive == null || !attempt.getSubmittedAt().isBefore(fromInclusive))
+                .filter(attempt -> toExclusive == null || attempt.getSubmittedAt().isBefore(toExclusive))
                 .sorted((a, b) -> b.getSubmittedAt().compareTo(a.getSubmittedAt()))
                 .map(attempt -> new StudentAttemptHistoryItem(
                         attempt.getId(),

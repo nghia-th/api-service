@@ -12,8 +12,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import vn.org.thn.service.app.quiz.dto.AttemptReportResponse;
 import vn.org.thn.service.app.quiz.dto.SpeakingAnswerAudio;
@@ -23,6 +25,7 @@ import vn.org.thn.service.app.quiz.service.ReportService;
 import vn.org.thn.service.base.controller.BaseCtl;
 import vn.org.thn.service.base.response.ApiResponse;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -64,8 +67,10 @@ public class ReportApi extends BaseCtl {
     })
     @GetMapping("/students/{studentId}/attempts")
     public ResponseEntity<ApiResponse<List<StudentAttemptHistoryItem>>> getStudentAttemptHistory(
-            @Parameter(description = "Student id") @PathVariable Long studentId) {
-        return ok(reportService.getStudentAttemptHistory(studentId));
+            @Parameter(description = "Student id") @PathVariable Long studentId,
+            @Parameter(description = "Inclusive start date (yyyy-MM-dd) - added 2026-09-05 for the \"weekly history\" view, item 8 of the 11-item batch. Omit both from/to to get the full history exactly as before.") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @Parameter(description = "Inclusive end date (yyyy-MM-dd)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ok(reportService.getStudentAttemptHistory(studentId, from, to));
     }
 
     @Operation(

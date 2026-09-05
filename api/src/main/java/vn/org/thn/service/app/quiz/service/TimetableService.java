@@ -57,6 +57,17 @@ public class TimetableService extends IBase {
         entries.sort(Comparator.comparing(TimetableEntry::getDayOfWeek)
                 .thenComparing(TimetableEntry::getOrderIndex));
 
+        return toResponses(entries);
+    }
+
+    /**
+     * Resolves each {@link TimetableEntry}'s {@code lessonId} -> {@link Lesson} -> {@link
+     * Subject} for display, preserving the input list's order. Package-private (not private) so
+     * {@code StudentTimetableService} (part 2 of this feature, same package) can reuse this exact
+     * mapping for its own "today/tomorrow" single-day queries instead of duplicating this walk -
+     * see that class's javadoc.
+     */
+    List<TimetableEntryResponse> toResponses(List<TimetableEntry> entries) {
         return entries.stream().map(entry -> {
             Lesson lesson = lessonRepository.findById(entry.getLessonId());
             Subject subject = lesson == null ? null : subjectRepository.findById(lesson.getSubjectId());
