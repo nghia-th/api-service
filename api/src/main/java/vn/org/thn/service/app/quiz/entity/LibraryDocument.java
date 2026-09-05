@@ -15,8 +15,9 @@ import vn.org.thn.service.base.entity.BaseEntity;
  * by {@code grade} (1-12, fixed list, validated in {@code LibraryService#upload}), {@code
  * subjectName} (free text, e.g. "Toan" - independent from any Parent's own {@link Subject} rows,
  * since this is shared curriculum material managed centrally by Admin, not owned by a Parent) and
- * {@code curriculum} (one of a fixed 3-value list - "Ket noi tri thuc"/"Chan troi sang tao"/
- * "Canh dieu", also validated in {@code LibraryService#upload}), plus an optional {@code volume}
+ * {@code curriculum} (a name from the Admin-managed {@link Curriculum} lookup list - previously
+ * a hardcoded 3-value list, changed 2026-09-05 - validated in {@code LibraryService#upload}),
+ * plus an optional {@code volume}
  * (e.g. "Tap 1"). Example from the user's own request: "Lop 4 -&gt; Toan tap 1 -&gt; Ket noi tri
  * thuc".
  * <p>

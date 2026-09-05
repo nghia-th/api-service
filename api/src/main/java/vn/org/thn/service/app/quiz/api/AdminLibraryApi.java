@@ -42,7 +42,7 @@ public class AdminLibraryApi extends BaseCtl {
 
     @Operation(
             summary = "List/search library documents",
-            description = "Every filter is optional and AND-combined: grade (exact), subjectName (partial match), curriculum (exact, one of the fixed 3-value list)."
+            description = "Every filter is optional and AND-combined: grade (exact), subjectName (partial match), curriculum (exact, one of the Admin-managed curriculum list - see /api/admin/curricula)."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Matching library documents")
@@ -57,7 +57,7 @@ public class AdminLibraryApi extends BaseCtl {
 
     @Operation(
             summary = "Upload a new textbook PDF",
-            description = "grade must be 1-12 and curriculum must be one of \"Ket noi tri thuc\"/\"Chan troi sang tao\"/\"Canh dieu\" - otherwise QUIZ_032. PDF only, 50MB max. title is optional (a default is generated from subjectName/grade/volume/curriculum when left blank)."
+            description = "grade must be 1-12 and curriculum must be a known name from /api/admin/curricula - otherwise QUIZ_032. PDF only, 50MB max. title is optional (a default is generated from subjectName/grade/volume/curriculum when left blank)."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Uploaded successfully - returns the new library document"),

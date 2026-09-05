@@ -55,7 +55,12 @@ import vn.org.thn.service.base.exception.ErrorCode;
  * LIBRARY_PDF_INVALID_TYPE}/{@code LIBRARY_PDF_TOO_LARGE}/{@code LIBRARY_ALREADY_LINKED}
  * (QUIZ_032-035, added 2026-09-05 for the "thu vien sach giao khoa" textbook-library feature)
  * guard {@code LibraryService#upload} (first 3) and {@code ParentLibraryService#link} (last one) -
- * see {@code LibraryService}'s javadoc for the full feature.
+ * see {@code LibraryService}'s javadoc for the full feature. {@code CURRICULUM_NAME_TAKEN}/{@code
+ * CURRICULUM_IN_USE} (QUIZ_036/QUIZ_037, added 2026-09-05 when the "bo sach" (curriculum) list
+ * became Admin-managed instead of a hardcoded 3-value list) guard {@code
+ * CurriculumService#create}/{@code #update} (duplicate name) and {@code CurriculumService#delete}
+ * (still referenced by a {@code LibraryDocument}) respectively - see {@code Curriculum}'s javadoc
+ * for the full background.
  */
 public enum QuizErrorCode implements ErrorCode {
 
@@ -93,7 +98,9 @@ public enum QuizErrorCode implements ErrorCode {
     LIBRARY_INVALID_TAXONOMY("QUIZ_032", "Grade must be between 1 and 12, and curriculum must be one of the fixed list", HttpStatus.BAD_REQUEST),
     LIBRARY_PDF_INVALID_TYPE("QUIZ_033", "Library document must be a PDF file", HttpStatus.BAD_REQUEST),
     LIBRARY_PDF_TOO_LARGE("QUIZ_034", "Library document must be 50MB or smaller", HttpStatus.BAD_REQUEST),
-    LIBRARY_ALREADY_LINKED("QUIZ_035", "This subject is already linked to this document", HttpStatus.CONFLICT);
+    LIBRARY_ALREADY_LINKED("QUIZ_035", "This subject is already linked to this document", HttpStatus.CONFLICT),
+    CURRICULUM_NAME_TAKEN("QUIZ_036", "A curriculum with this name already exists", HttpStatus.CONFLICT),
+    CURRICULUM_IN_USE("QUIZ_037", "Curriculum is still used by a library document - reassign or delete it first", HttpStatus.CONFLICT);
 
     private final String code;
     private final String message;

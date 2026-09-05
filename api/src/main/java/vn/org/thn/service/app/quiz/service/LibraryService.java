@@ -6,9 +6,11 @@ import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.LibraryDocumentResponse;
 import vn.org.thn.service.app.quiz.dto.LibraryFile;
 import vn.org.thn.service.app.quiz.dto.SubjectLibraryLinkResponse;
+import vn.org.thn.service.app.quiz.entity.Curriculum;
 import vn.org.thn.service.app.quiz.entity.LibraryDocument;
 import vn.org.thn.service.app.quiz.entity.SubjectLibraryLink;
 import vn.org.thn.service.app.quiz.exception.QuizErrorCode;
+import vn.org.thn.service.app.quiz.repository.CurriculumRepository;
 import vn.org.thn.service.app.quiz.repository.LibraryDocumentRepository;
 import vn.org.thn.service.app.quiz.repository.SubjectLibraryLinkRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
@@ -23,14 +25,15 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 /**
  * Admin-managed textbook PDF library (2026-09-05, "thu vien sach giao khoa" feature, per the
  * user's explicit request): an Admin uploads PDF textbooks organized by {@code grade} (1-12),
- * {@code subjectName} (free text, e.g. "Toan") and {@code curriculum} (one of a fixed 3-value
- * list), plus an optional {@code volume} - see {@link LibraryDocument}'s javadoc for the full
+ * {@code subjectName} (free text, e.g. "Toan") and {@code curriculum} (a name from the
+ * Admin-managed {@link vn.org.thn.service.app.quiz.entity.Curriculum} list, see {@code
+ * CurriculumService}'s javadoc - previously a hardcoded 3-value list, changed 2026-09-05 per
+ * the user's explicit request), plus an optional {@code volume} - see {@link LibraryDocument}'s javadoc for the full
  * shape and the user's own example ("Lop 4 -&gt; Toan tap 1 -&gt; Ket noi tri thuc").
  * <p>
  * ACCESS MODEL (3 roles, mirroring {@code LessonService}/{@code StudentLessonService}'s existing
@@ -72,11 +75,12 @@ public class LibraryService extends IBase {
 
     private static final int MIN_GRADE = 1;
     private static final int MAX_GRADE = 12;
-    // Fixed 3-value list, per the user's explicit decision (AskUserQuestion, 2026-09-05).
-    private static final Set<String> VALID_CURRICULA = Set.of("Kết nối tri thức", "Chân trời sáng tạo", "Cánh diều");
 
     @Autowired
     private LibraryDocumentRepository libraryDocumentRepository;
+
+    @Autowired
+    private CurriculumRepository curriculumRepository;
 
     @Autowired
     private SubjectLibraryLinkRepository subjectLibraryLinkRepository;
@@ -91,9 +95,10 @@ public class LibraryService extends IBase {
                 .stream().map(LibraryDocumentResponse::from).toList();
     }
 
-    /** Admin-only (enforced by {@code JwtAuthFilter}'s {@code /api/admin/*} prefix, no further root check - see this class's javadoc). Validates grade/curriculum against the fixed lists, and the file against {@link #ALLOWED_PDF_TYPES}/{@link #MAX_PDF_SIZE_BYTES} before anything is written to disk. */
+    /** Admin-only (enforced by {@code JwtAuthFilter}'s {@code /api/admin/*} prefix, no further root check - see this class's javadoc). Validates grade against the 1-12 range and curriculum against the Admin-managed Curriculum list, and the file against {@link #ALLOWED_PDF_TYPES}/{@link #MAX_PDF_SIZE_BYTES} before anything is written to disk. */
     public LibraryDocumentResponse upload(int grade, String subjectName, String curriculum, String volume, String title, MultipartFile file) {
-        if (grade < MIN_GRADE || grade > MAX_GRADE || !VALID_CURRICULA.contains(curriculum)) {
+        if (grade < MIN_GRADE || grade > MAX_GRADE
+                || !curriculumRepository.query().eq(Curriculum::getName, curriculum).exists()) {
             throw new BusinessException(QuizErrorCode.LIBRARY_INVALID_TAXONOMY);
         }
         String extension = ALLOWED_PDF_TYPES.get(file.getContentType());

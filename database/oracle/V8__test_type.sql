@@ -1,2 +1,0 @@
-ALTER TABLE test
-    ADD (test_type VARCHAR2(20) DEFAULT 'REGULAR' NOT NULL);

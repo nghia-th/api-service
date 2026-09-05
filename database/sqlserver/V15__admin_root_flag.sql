@@ -1,2 +1,0 @@
-ALTER TABLE admin
-    ADD root BIT NOT NULL DEFAULT 0;
