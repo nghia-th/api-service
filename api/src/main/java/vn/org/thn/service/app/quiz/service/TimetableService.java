@@ -5,10 +5,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.org.thn.service.app.quiz.dto.TimetableDayRequest;
 import vn.org.thn.service.app.quiz.dto.TimetableEntryResponse;
-import vn.org.thn.service.app.quiz.entity.Lesson;
 import vn.org.thn.service.app.quiz.entity.Subject;
 import vn.org.thn.service.app.quiz.entity.TimetableEntry;
-import vn.org.thn.service.app.quiz.repository.LessonRepository;
 import vn.org.thn.service.app.quiz.repository.SubjectRepository;
 import vn.org.thn.service.app.quiz.repository.TimetableEntryRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
@@ -27,7 +25,8 @@ import java.util.List;
  * trong 1 tuan cua con"). Later parts (Student "today/tomorrow" view, Parent weekly view, the
  * lesson-preparation checkbox) all read {@link #getWeek} rather than duplicating this class's own
  * lookup logic. See {@link TimetableEntry}'s javadoc for the full design rationale (single
- * persistent template, no time-of-day, pins an exact Lesson, no separate volume/tap field).
+ * persistent template, no time-of-day, Subject-level only as of the 2026-09-06 revision, no
+ * separate volume/tap field).
  * <p>
  * Same "read {@link CurrentUser#get()} itself, ownership enforced here rather than trusted from
  * the caller" shape as every other Parent-facing service in this codebase.
@@ -37,9 +36,6 @@ public class TimetableService extends IBase {
 
     @Autowired
     private TimetableEntryRepository timetableEntryRepository;
-
-    @Autowired
-    private LessonRepository lessonRepository;
 
     @Autowired
     private SubjectRepository subjectRepository;
@@ -61,22 +57,21 @@ public class TimetableService extends IBase {
     }
 
     /**
-     * Resolves each {@link TimetableEntry}'s {@code lessonId} -> {@link Lesson} -> {@link
-     * Subject} for display, preserving the input list's order. Package-private (not private) so
-     * {@code StudentTimetableService}/{@code LessonPreparationService} (same package) can reuse
-     * this exact mapping for their own single-day queries instead of duplicating this walk - see
-     * those classes' javadoc.
+     * Resolves each {@link TimetableEntry}'s {@code subjectId} -> {@link Subject} for display,
+     * preserving the input list's order. Package-private (not private) so {@code
+     * StudentTimetableService}/{@code LessonPreparationService} (same package) can reuse this
+     * exact mapping for their own single-day queries instead of duplicating this walk - see those
+     * classes' javadoc.
      */
     List<TimetableEntryResponse> toResponses(List<TimetableEntry> entries) {
         return entries.stream().map(entry -> {
-            Lesson lesson = lessonRepository.findById(entry.getLessonId());
-            Subject subject = lesson == null ? null : subjectRepository.findById(lesson.getSubjectId());
-            return TimetableEntryResponse.from(entry, lesson, subject);
+            Subject subject = subjectRepository.findById(entry.getSubjectId());
+            return TimetableEntryResponse.from(entry, subject);
         }).toList();
     }
 
     /**
-     * The lessons scheduled on {@code date}'s day-of-week for {@code classroomId}, sorted by
+     * The subjects scheduled on {@code date}'s day-of-week for {@code classroomId}, sorted by
      * {@code orderIndex} - the single-day counterpart of {@link #getWeek}, added so both {@code
      * StudentTimetableService} (Student's own today/tomorrow) and {@code
      * LessonPreparationService} (Parent's read-only view of ANY owned student, not just the
@@ -98,15 +93,15 @@ public class TimetableService extends IBase {
 
     /**
      * REPLACES every {@link TimetableEntry} for {@code classroomId}+{@code dayOfWeek} with the
-     * lessons in {@code request.getLessonIds()}, in that order (0-based {@code orderIndex}) - see
-     * {@code TimetableDayRequest}'s javadoc for why a full-replace call was chosen over a
+     * subjects in {@code request.getSubjectIds()}, in that order (0-based {@code orderIndex}) -
+     * see {@code TimetableDayRequest}'s javadoc for why a full-replace call was chosen over a
      * per-entry add/remove/reorder API (a Parent editing "Monday's schedule" naturally thinks of
      * it as "here is the new full list for Monday", not a sequence of individual inserts/deletes -
      * and a full replace can never leave stray leftover rows from a previous edit).
      * <p>
-     * Every {@code lessonId} is validated BEFORE anything is deleted, so a bad id (unknown, or
-     * belonging to a Subject outside this Classroom) leaves the day completely untouched rather
-     * than half-cleared.
+     * Every {@code subjectId} is validated BEFORE anything is deleted, so a bad id (unknown, or
+     * belonging to another Classroom) leaves the day completely untouched rather than
+     * half-cleared.
      */
     @Transactional
     public void setDay(Long classroomId, int dayOfWeek, TimetableDayRequest request) {
@@ -117,9 +112,9 @@ public class TimetableService extends IBase {
                     "dayOfWeek must be between 1 (Monday) and 7 (Sunday)");
         }
 
-        List<Lesson> lessons = new ArrayList<>();
-        for (Long lessonId : request.getLessonIds()) {
-            lessons.add(getLessonInClassroomOrThrow(lessonId, classroomId));
+        List<Subject> subjects = new ArrayList<>();
+        for (Long subjectId : request.getSubjectIds()) {
+            subjects.add(getSubjectInClassroomOrThrow(subjectId, classroomId));
         }
 
         timetableEntryRepository.delete()
@@ -129,11 +124,11 @@ public class TimetableService extends IBase {
 
         LocalDateTime now = LocalDateTime.now();
         int orderIndex = 0;
-        for (Lesson lesson : lessons) {
+        for (Subject subject : subjects) {
             TimetableEntry entry = new TimetableEntry();
             entry.setClassroomId(classroomId);
             entry.setDayOfWeek(dayOfWeek);
-            entry.setLessonId(lesson.getId());
+            entry.setSubjectId(subject.getId());
             entry.setOrderIndex(orderIndex++);
             entry.setCreatedAt(now);
             entry.setUpdatedAt(now);
@@ -142,27 +137,26 @@ public class TimetableService extends IBase {
             timetableEntryRepository.save(entry);
         }
 
-        logInfo("Timetable day set: classroomId={}, dayOfWeek={}, lessonCount={}, parentId={}",
-                classroomId, dayOfWeek, lessons.size(), parentId);
+        logInfo("Timetable day set: classroomId={}, dayOfWeek={}, subjectCount={}, parentId={}",
+                classroomId, dayOfWeek, subjects.size(), parentId);
     }
 
     /**
-     * Loads {@code lessonId}, throwing if it doesn't exist or its Subject does not belong to
-     * {@code classroomId} - deliberately does NOT reuse {@code LessonService#getOwnedOrThrow}
+     * Loads {@code subjectId}, throwing if it doesn't exist or does not belong to {@code
+     * classroomId} - deliberately does NOT reuse {@code SubjectService}'s own ownership check
      * (that only checks "belongs to the current Parent", i.e. ANY of their classrooms) because a
-     * Lesson from the Parent's OTHER Classroom must still be rejected here (a Classroom's
-     * timetable can only reference Lessons taught in that same Classroom).
+     * Subject from the Parent's OTHER Classroom must still be rejected here (a Classroom's
+     * timetable can only reference Subjects taught in that same Classroom).
      */
-    private Lesson getLessonInClassroomOrThrow(Long lessonId, Long classroomId) {
-        Lesson lesson = lessonRepository.findById(lessonId);
-        if (lesson == null) {
-            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Lesson not found");
+    private Subject getSubjectInClassroomOrThrow(Long subjectId, Long classroomId) {
+        Subject subject = subjectRepository.findById(subjectId);
+        if (subject == null) {
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Subject not found");
         }
-        Subject subject = subjectRepository.findById(lesson.getSubjectId());
-        if (subject == null || !subject.getClassroomId().equals(classroomId)) {
+        if (!subject.getClassroomId().equals(classroomId)) {
             throw new BusinessException(CommonErrorCode.INVALID_PARAMETER,
-                    "lessonId " + lessonId + " does not belong to a subject in this classroom");
+                    "subjectId " + subjectId + " does not belong to this classroom");
         }
-        return lesson;
+        return subject;
     }
 }

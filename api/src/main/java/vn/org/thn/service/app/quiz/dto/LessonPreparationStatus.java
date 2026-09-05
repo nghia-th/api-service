@@ -9,12 +9,13 @@ import lombok.Data;
  * whether a {@code LessonPreparation} row exists for it, for BOTH the Student's own view (item 9)
  * and the Parent's read-only view of a student (item 10) - same shape either way, only {@code
  * prepared} ever differs by viewer.
+ * <p>
+ * No more {@code lessonId}/{@code lessonName} (2026-09-06 revision - see {@code
+ * TimetableEntry}'s javadoc): the checklist is Subject-level only now.
  */
 @Data
 @AllArgsConstructor
 public class LessonPreparationStatus {
-    private Long lessonId;
-    private String lessonName;
     private Long subjectId;
     private String subjectName;
     private Integer orderIndex;
