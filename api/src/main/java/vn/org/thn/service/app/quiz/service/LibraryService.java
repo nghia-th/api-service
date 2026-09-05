@@ -171,6 +171,11 @@ public class LibraryService extends IBase {
         logInfo("Library document deleted: id={}, adminId={}", id, CurrentUser.get().userId());
     }
 
+    /** Admin-only download/view (no ownership concept for Admin - full access, see this class's javadoc). Public, unlike {@link #getById}/{@link #loadFile} below (package-private, reused by Parent/Student after THEIR OWN access checks) - Admin has no separate check to perform first. */
+    public LibraryFile downloadForAdmin(Long id) {
+        return loadFile(getById(id));
+    }
+
     /** Loads the LibraryDocument with id {@code id} with NO ownership check at all - package-private so {@code ParentLibraryService}/{@code StudentLibraryService} can resolve it after doing their own (different) access checks, same shape as {@code LessonService#getById}. */
     LibraryDocument getById(Long id) {
         LibraryDocument doc = libraryDocumentRepository.findById(id);

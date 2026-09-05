@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.LibraryDocumentResponse;
+import vn.org.thn.service.app.quiz.dto.LibraryFile;
 import vn.org.thn.service.app.quiz.security.JwtAuthFilter;
 import vn.org.thn.service.app.quiz.service.LibraryService;
 import vn.org.thn.service.base.controller.BaseCtl;
@@ -84,5 +86,22 @@ public class AdminLibraryApi extends BaseCtl {
     public ResponseEntity<ApiResponse<Void>> delete(@Parameter(description = "Library document id") @PathVariable Long id) {
         libraryService.delete(id);
         return ok();
+    }
+
+    @Operation(
+            summary = "View/download a library document's PDF",
+            description = "Admin has full access to the whole library, no ownership check (see LibraryService's javadoc)."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the PDF file"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No library document with this id - COMMON_005 NOT_FOUND")
+    })
+    @GetMapping("/{id}/file")
+    public ResponseEntity<byte[]> file(@Parameter(description = "Library document id") @PathVariable Long id) {
+        LibraryFile file = libraryService.downloadForAdmin(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + file.filename() + "\"")
+                .body(file.content());
     }
 }
