@@ -13,9 +13,11 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import vn.org.thn.service.app.quiz.dto.LessonPreparationStatus;
 import vn.org.thn.service.app.quiz.dto.TimetableDayRequest;
 import vn.org.thn.service.app.quiz.dto.TimetableEntryResponse;
 import vn.org.thn.service.app.quiz.security.JwtAuthFilter;
+import vn.org.thn.service.app.quiz.service.LessonPreparationService;
 import vn.org.thn.service.app.quiz.service.TimetableService;
 import vn.org.thn.service.base.controller.BaseCtl;
 import vn.org.thn.service.base.response.ApiResponse;
@@ -36,6 +38,9 @@ public class TimetableApi extends BaseCtl {
 
     @Autowired
     private TimetableService timetableService;
+
+    @Autowired
+    private LessonPreparationService lessonPreparationService;
 
     @Operation(
             summary = "The whole week's timetable for this classroom",
@@ -64,5 +69,19 @@ public class TimetableApi extends BaseCtl {
             @Valid @RequestBody TimetableDayRequest request) {
         timetableService.setDay(classroomId, dayOfWeek, request);
         return ok(timetableService.getWeek(classroomId));
+    }
+
+    @Operation(
+            summary = "A student's tomorrow lesson-preparation checklist",
+            description = "Item 10 of the 2026-09-05 batch request (\"phu huynh xem duoc con da chuan bi bai cho ngay mai hay chua\") - read-only, same shape as the student's own GET /api/student/preparation/tomorrow. studentId must belong to the current parent."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Tomorrow's checklist for this student, each lesson flagged prepared/not"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This student does not belong to the current parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No student with this id - COMMON_005 NOT_FOUND")
+    })
+    @GetMapping("/students/{studentId}/preparation/tomorrow")
+    public ResponseEntity<ApiResponse<List<LessonPreparationStatus>>> getStudentTomorrowPreparation(@PathVariable Long studentId) {
+        return ok(lessonPreparationService.getStudentTomorrowStatus(studentId));
     }
 }

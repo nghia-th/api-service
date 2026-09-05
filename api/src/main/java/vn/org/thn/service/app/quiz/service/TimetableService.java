@@ -63,9 +63,9 @@ public class TimetableService extends IBase {
     /**
      * Resolves each {@link TimetableEntry}'s {@code lessonId} -> {@link Lesson} -> {@link
      * Subject} for display, preserving the input list's order. Package-private (not private) so
-     * {@code StudentTimetableService} (part 2 of this feature, same package) can reuse this exact
-     * mapping for its own "today/tomorrow" single-day queries instead of duplicating this walk -
-     * see that class's javadoc.
+     * {@code StudentTimetableService}/{@code LessonPreparationService} (same package) can reuse
+     * this exact mapping for their own single-day queries instead of duplicating this walk - see
+     * those classes' javadoc.
      */
     List<TimetableEntryResponse> toResponses(List<TimetableEntry> entries) {
         return entries.stream().map(entry -> {
@@ -73,6 +73,27 @@ public class TimetableService extends IBase {
             Subject subject = lesson == null ? null : subjectRepository.findById(lesson.getSubjectId());
             return TimetableEntryResponse.from(entry, lesson, subject);
         }).toList();
+    }
+
+    /**
+     * The lessons scheduled on {@code date}'s day-of-week for {@code classroomId}, sorted by
+     * {@code orderIndex} - the single-day counterpart of {@link #getWeek}, added so both {@code
+     * StudentTimetableService} (Student's own today/tomorrow) and {@code
+     * LessonPreparationService} (Parent's read-only view of ANY owned student, not just the
+     * current caller) can resolve "what does classroom X study on date Y" without each
+     * re-implementing the {@code dayOfWeek} lookup + sort. Package-private, no ownership check
+     * here (unlike {@link #getWeek}) - the caller is responsible for verifying it may look at
+     * {@code classroomId} (a Student's own classroom needs no check; a Parent's access is checked
+     * against the STUDENT, not the classroom, in {@code LessonPreparationService}).
+     */
+    List<TimetableEntryResponse> getForClassroomAndDate(Long classroomId, java.time.LocalDate date) {
+        int dayOfWeek = date.getDayOfWeek().getValue();
+        List<TimetableEntry> entries = timetableEntryRepository.query()
+                .eq(TimetableEntry::getClassroomId, classroomId)
+                .eq(TimetableEntry::getDayOfWeek, dayOfWeek)
+                .list();
+        entries.sort(Comparator.comparing(TimetableEntry::getOrderIndex));
+        return toResponses(entries);
     }
 
     /**

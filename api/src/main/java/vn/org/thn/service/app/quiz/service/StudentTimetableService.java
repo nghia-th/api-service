@@ -4,16 +4,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import vn.org.thn.service.app.quiz.dto.TimetableEntryResponse;
 import vn.org.thn.service.app.quiz.entity.Student;
-import vn.org.thn.service.app.quiz.entity.TimetableEntry;
 import vn.org.thn.service.app.quiz.repository.StudentRepository;
-import vn.org.thn.service.app.quiz.repository.TimetableEntryRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.base.IBase;
 import vn.org.thn.service.base.exception.BusinessException;
 import vn.org.thn.service.base.exception.CommonErrorCode;
 
 import java.time.LocalDate;
-import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -36,9 +33,6 @@ public class StudentTimetableService extends IBase {
 
     @Autowired
     private StudentRepository studentRepository;
-
-    @Autowired
-    private TimetableEntryRepository timetableEntryRepository;
 
     @Autowired
     private TimetableService timetableService;
@@ -66,13 +60,6 @@ public class StudentTimetableService extends IBase {
             throw new BusinessException(CommonErrorCode.NOT_FOUND, "Student not found");
         }
 
-        int dayOfWeek = date.getDayOfWeek().getValue();
-        List<TimetableEntry> entries = timetableEntryRepository.query()
-                .eq(TimetableEntry::getClassroomId, student.getClassroomId())
-                .eq(TimetableEntry::getDayOfWeek, dayOfWeek)
-                .list();
-        entries.sort(Comparator.comparing(TimetableEntry::getOrderIndex));
-
-        return timetableService.toResponses(entries);
+        return timetableService.getForClassroomAndDate(student.getClassroomId(), date);
     }
 }
