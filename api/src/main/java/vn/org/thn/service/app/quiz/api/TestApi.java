@@ -22,6 +22,7 @@ import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.PracticeGenerateRequest;
 import vn.org.thn.service.app.quiz.dto.PracticeImportResponse;
 import vn.org.thn.service.app.quiz.dto.TemplateFile;
+import vn.org.thn.service.app.quiz.dto.TestCreateFromLessonsRequest;
 import vn.org.thn.service.app.quiz.dto.TestCreateRequest;
 import vn.org.thn.service.app.quiz.dto.TestDetailResponse;
 import vn.org.thn.service.app.quiz.dto.TestResponse;
@@ -61,6 +62,21 @@ public class TestApi extends BaseCtl {
     @PostMapping
     public ResponseEntity<ApiResponse<TestResponse>> create(@Valid @RequestBody TestCreateRequest request) {
         return ok(testService.create(request));
+    }
+
+    @Operation(
+            summary = "Create and assign a test from whole Lessons",
+            description = "Parallel creation mode alongside the hand-pick-each-question POST above (2026-09-05, item 3/11) - picks EVERY question under the given lessonIds, shuffles them, and creates a REGULAR test assigned immediately (status ASSIGNED). Each lessonId must belong to the current parent and be in the student's own classroom."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Created successfully - returns the new Test"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "A required field is missing, lessonIds is empty, or the selected lessons have no questions - COMMON_001 or QUIZ_039"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "studentId or one of lessonIds belongs to another parent, or a lesson is not in the student's classroom - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No student or lesson with the given id - COMMON_005 NOT_FOUND")
+    })
+    @PostMapping("/from-lessons")
+    public ResponseEntity<ApiResponse<TestResponse>> createFromLessons(@Valid @RequestBody TestCreateFromLessonsRequest request) {
+        return ok(testService.createFromLessons(request));
     }
 
     @Operation(

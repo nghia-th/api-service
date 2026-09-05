@@ -6,6 +6,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,10 +16,16 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+import vn.org.thn.service.app.quiz.dto.SubjectImportResponse;
 import vn.org.thn.service.app.quiz.dto.SubjectRequest;
 import vn.org.thn.service.app.quiz.dto.SubjectResponse;
+import vn.org.thn.service.app.quiz.dto.TemplateFile;
 import vn.org.thn.service.app.quiz.security.JwtAuthFilter;
+import vn.org.thn.service.app.quiz.service.SubjectImportService;
 import vn.org.thn.service.app.quiz.service.SubjectService;
 import vn.org.thn.service.base.controller.BaseCtl;
 import vn.org.thn.service.base.response.ApiResponse;
@@ -37,6 +45,9 @@ public class SubjectApi extends BaseCtl {
 
     @Autowired
     private SubjectService subjectService;
+
+    @Autowired
+    private SubjectImportService subjectImportService;
 
     @Operation(
             summary = "Create a subject",
@@ -111,5 +122,39 @@ public class SubjectApi extends BaseCtl {
     public ResponseEntity<ApiResponse<Void>> delete(@Parameter(description = "Subject id") @PathVariable Long id) {
         subjectService.delete(id);
         return ok();
+    }
+
+    @Operation(
+            summary = "Download the subject import template",
+            description = "Returns a ready-to-fill Excel (default) or CSV file with a single 'Ten mon hoc' column plus one illustrative example row, which the import endpoint recognizes and skips automatically whether or not it is deleted before uploading."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the template file (Content-Type set per the requested format)")
+    })
+    @GetMapping("/import-template")
+    public ResponseEntity<byte[]> importTemplate(
+            @Parameter(description = "\"xlsx\" (default) or \"csv\"") @RequestParam(required = false, defaultValue = "xlsx") String format) {
+        TemplateFile template = subjectImportService.generateTemplate(format);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(template.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + template.filename() + "\"")
+                .body(template.content());
+    }
+
+    @Operation(
+            summary = "Bulk-import subjects from an Excel/CSV file",
+            description = "Best-effort per row - one bad row does not stop the others in the same file. classroomId must belong to the current parent, checked before the file is even read. A row whose name already exists in this classroom is reported as an error and skipped."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "File was read - check the response body for per-row errors, if any (this is 200 even when some/all rows failed, since the request itself succeeded)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "File could not be read at all (wrong format/corrupt/empty), or has more rows than the per-import limit - QUIZ_012 or QUIZ_011"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "classroomId belongs to another parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No classroom with this classroomId - COMMON_005 NOT_FOUND")
+    })
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<SubjectImportResponse>> importFile(
+            @Parameter(description = "Classroom id every imported subject is attached to") @RequestParam Long classroomId,
+            @Parameter(description = "The .xlsx or .csv file, filled in from the downloaded template") @RequestPart MultipartFile file) {
+        return ok(subjectImportService.importFile(classroomId, file));
     }
 }

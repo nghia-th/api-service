@@ -70,7 +70,13 @@ import vn.org.thn.service.base.exception.ErrorCode;
  * lock the attempt - the same rule is enforced again here server-side (not just the Submit button
  * being disabled client-side) so a direct API call cannot bypass it, same "always validate both
  * layers" convention as every other 2-tier check in this codebase (e.g. {@code
- * LIBRARY_INVALID_TAXONOMY}).
+ * LIBRARY_INVALID_TAXONOMY}). {@code LESSON_SELECTION_NO_QUESTIONS} (QUIZ_039, added 2026-09-05
+ * for item 3/11 of the 11-item batch request: "khi tao de thi chon nhung bai con da hoc") guards
+ * {@code TestService#createFromLessons} - thrown only if every selected Lesson happens to have
+ * zero Questions (an edge case, since the Lessons offered to pick from already have content by
+ * the app's own "already studied" convention) - deliberately its own code rather than reusing
+ * {@code SUBJECT_NO_QUESTIONS} (QUIZ_018), since that one is specifically about an empty
+ * Subject-wide pool for "On tap kien thuc" generation, a different call path/message.
  */
 public enum QuizErrorCode implements ErrorCode {
 
@@ -111,7 +117,8 @@ public enum QuizErrorCode implements ErrorCode {
     LIBRARY_ALREADY_LINKED("QUIZ_035", "This subject is already linked to this document", HttpStatus.CONFLICT),
     CURRICULUM_NAME_TAKEN("QUIZ_036", "A curriculum with this name already exists", HttpStatus.CONFLICT),
     CURRICULUM_IN_USE("QUIZ_037", "Curriculum is still used by a library document - reassign or delete it first", HttpStatus.CONFLICT),
-    ATTEMPT_NOT_ALL_ANSWERED("QUIZ_038", "All questions must be answered before submitting", HttpStatus.BAD_REQUEST);
+    ATTEMPT_NOT_ALL_ANSWERED("QUIZ_038", "All questions must be answered before submitting", HttpStatus.BAD_REQUEST),
+    LESSON_SELECTION_NO_QUESTIONS("QUIZ_039", "The selected lessons have no questions yet", HttpStatus.BAD_REQUEST);
 
     private final String code;
     private final String message;

@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.org.thn.service.app.quiz.dto.PracticeGenerateRequest;
 import vn.org.thn.service.app.quiz.dto.QuestionResponse;
+import vn.org.thn.service.app.quiz.dto.TestCreateFromLessonsRequest;
 import vn.org.thn.service.app.quiz.dto.TestCreateRequest;
 import vn.org.thn.service.app.quiz.dto.TestDetailResponse;
 import vn.org.thn.service.app.quiz.dto.TestResponse;
@@ -78,6 +79,9 @@ public class TestService extends IBase {
     private SubjectService subjectService;
 
     @Autowired
+    private LessonService lessonService;
+
+    @Autowired
     private LessonRepository lessonRepository;
 
     @Autowired
@@ -128,6 +132,72 @@ public class TestService extends IBase {
 
         logInfo("Test created: id={}, studentId={}, parentId={}, questionCount={}",
                 test.getId(), test.getStudentId(), parentId, request.getQuestionIds().size());
+        return TestResponse.from(test);
+    }
+
+    /**
+     * Creates and assigns a REGULAR Test the same way {@link #create} does, but from whole
+     * Lessons instead of hand-picked Questions (2026-09-05, item 3/11 of the 11-item batch
+     * request - see {@link TestCreateFromLessonsRequest}'s javadoc for the full design). Every
+     * Question under every selected Lesson is included (no SPEAKING exclusion here - unlike
+     * {@link #doGeneratePractice}, the user's own wording for this feature was "lay tat ca cac
+     * cau hoi" (take ALL the questions), with no "trac nghiem only" qualifier like the "On tap
+     * kien thuc" feature had - flagged here as a judgment call made without asking again, for
+     * review) then shuffled, same "Collections.shuffle, no existing precedent to match beyond
+     * this class's own {@link #doGeneratePractice}" approach.
+     * <p>
+     * Each {@code lessonId} is ownership-checked via {@link LessonService#getOwnedOrThrow} AND
+     * cross-checked against the student's OWN classroom (its owning Subject's {@code
+     * classroomId} must equal {@code student.getClassroomId()}) - same rigor as {@link
+     * #generatePractice}'s subject/classroom check, guarding against a tampered request naming a
+     * Lesson from a different Classroom than the assignee actually studies in (the frontend only
+     * ever offers Lessons already restricted to the student's own classroom, so this is
+     * defense-in-depth, not something a normal use of the picker could trigger).
+     */
+    @Transactional
+    public TestResponse createFromLessons(TestCreateFromLessonsRequest request) {
+        Long parentId = CurrentUser.get().userId();
+        Student student = studentService.getOwnedOrThrow(request.getStudentId(), parentId);
+
+        List<Long> questionIds = new ArrayList<>();
+        for (Long lessonId : request.getLessonIds()) {
+            Lesson lesson = lessonService.getOwnedOrThrow(lessonId, parentId);
+            Subject subject = subjectService.getById(lesson.getSubjectId());
+            if (!subject.getClassroomId().equals(student.getClassroomId())) {
+                throw new BusinessException(CommonErrorCode.FORBIDDEN, "This lesson is not in the student's classroom");
+            }
+            questionIds.addAll(questionRepository.query().eq(Question::getLessonId, lessonId).list()
+                    .stream().map(Question::getId).toList());
+        }
+        if (questionIds.isEmpty()) {
+            throw new BusinessException(QuizErrorCode.LESSON_SELECTION_NO_QUESTIONS);
+        }
+        Collections.shuffle(questionIds);
+
+        LocalDateTime now = LocalDateTime.now();
+        Test test = new Test();
+        test.setParentId(parentId);
+        test.setStudentId(request.getStudentId());
+        test.setName(request.getName());
+        test.setStatus(TestStatus.ASSIGNED.name());
+        test.setTestType(TestType.REGULAR.name());
+        test.setCreatedAt(now);
+        test.setUpdatedAt(now);
+        test.setCreatedBy("parent:" + parentId);
+        test.setUpdatedBy("parent:" + parentId);
+        test = testRepository.save(test);
+
+        int orderIndex = 0;
+        for (Long questionId : questionIds) {
+            TestQuestion testQuestion = new TestQuestion();
+            testQuestion.setTestId(test.getId());
+            testQuestion.setQuestionId(questionId);
+            testQuestion.setOrderIndex(orderIndex++);
+            testQuestionRepository.save(testQuestion);
+        }
+
+        logInfo("Test created from lessons: id={}, studentId={}, parentId={}, lessonCount={}, questionCount={}",
+                test.getId(), test.getStudentId(), parentId, request.getLessonIds().size(), questionIds.size());
         return TestResponse.from(test);
     }
 

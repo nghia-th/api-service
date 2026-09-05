@@ -141,4 +141,39 @@ public class SubjectService extends IBase {
         }
         return subject;
     }
+
+    /**
+     * Creates one Subject row with NO ownership re-check (2026-09-05, item 2 of the 11-item batch
+     * request, "Phu huynh bulk-tao Mon hoc qua import file") - {@code classroomId} ownership must
+     * already be validated ONCE, up front, by the caller ({@code SubjectImportService#importFile},
+     * before the file is even read) - same "check once up front, never re-check per row" shape as
+     * {@code QuestionService#createFromImportRow} for {@code lessonId}. Package-private, only ever
+     * called from {@code SubjectImportService}.
+     */
+    Subject createFromImportRow(Long classroomId, Long parentId, String name) {
+        LocalDateTime now = LocalDateTime.now();
+        Subject subject = new Subject();
+        subject.setClassroomId(classroomId);
+        subject.setName(name);
+        subject.setCreatedAt(now);
+        subject.setUpdatedAt(now);
+        subject.setCreatedBy("parent:" + parentId);
+        subject.setUpdatedBy("parent:" + parentId);
+        subject = subjectRepository.save(subject);
+        logInfo("Subject created (import): id={}, classroomId={}, parentId={}", subject.getId(), classroomId, parentId);
+        return subject;
+    }
+
+    /**
+     * Whether {@code classroomId} already has a Subject with this exact (trimmed) name - used
+     * only by {@code SubjectImportService} to reject a duplicate row during import (same "bao loi
+     * dong do, bo qua" convention as {@code LibraryService#existsExact}, applied here for
+     * consistency even though the user was not asked again for this specific feature).
+     */
+    boolean existsByName(Long classroomId, String name) {
+        return subjectRepository.query()
+                .eq(Subject::getClassroomId, classroomId)
+                .eq(Subject::getName, name)
+                .exists();
+    }
 }
