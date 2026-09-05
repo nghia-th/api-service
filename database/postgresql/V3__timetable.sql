@@ -1,0 +1,30 @@
+-- Weekly timetable ("thoi khoa bieu", 2026-09-05) for a Classroom - one row per Lesson scheduled
+-- on one day of the week. Deliberately a SINGLE persistent template (no per-week/dated snapshot -
+-- AskUserQuestion 2026-09-05: "1 mau chung duy nhat") - editing a day applies immediately and
+-- forever going forward, there is nothing to "copy from last week". day_of_week is 1-7,
+-- Monday-Sunday (matches java.time.DayOfWeek#getValue() exactly, ISO-8601). No time-of-day/period
+-- column (AskUserQuestion: "chi danh sach mon theo thu tu, khong can gio") - order_index alone
+-- controls display order within a day, same convention as test_question.order_index. Pins an
+-- exact lesson_id (AskUserQuestion: "gan dung 1 Lesson co san") rather than a free-text subject
+-- name - the Subject is resolved indirectly via lesson.subject_id, no separate subject_id column
+-- here (same "don't duplicate a derivable foreign key" reasoning as subject having no parent_id
+-- of its own). No volume/tap column either - a textbook with multiple volumes is represented as
+-- separate Subject rows with distinguishing names (e.g. "Toan tap 1"/"Toan tap 2"), per the
+-- user's explicit answer - no schema change needed for that.
+CREATE TABLE timetable_entry
+(
+    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    classroom_id BIGINT  NOT NULL,
+    day_of_week  INTEGER NOT NULL,
+    lesson_id    BIGINT  NOT NULL,
+    order_index  INTEGER NOT NULL,
+    created_at   TIMESTAMP,
+    updated_at   TIMESTAMP,
+    created_by   VARCHAR(100),
+    updated_by   VARCHAR(100),
+    deleted      BOOLEAN NOT NULL DEFAULT FALSE,
+
+    CONSTRAINT fk_timetable_entry_classroom FOREIGN KEY (classroom_id) REFERENCES classroom (id),
+    CONSTRAINT fk_timetable_entry_lesson FOREIGN KEY (lesson_id) REFERENCES lesson (id)
+);
+CREATE INDEX idx_timetable_entry_classroom_day ON timetable_entry (classroom_id, day_of_week);

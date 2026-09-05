@@ -561,6 +561,19 @@
     "invoice": "Hoá đơn",
     "order-shipped": "Đơn hàng đang giao",
     "quiz-answer-all-required": "Anh/chị phải trả lời hết tất cả câu hỏi trước khi nộp bài.",
-    "QUIZ_038": "Phải trả lời hết tất cả câu hỏi trước khi nộp bài."
+    "QUIZ_038": "Phải trả lời hết tất cả câu hỏi trước khi nộp bài.",
+    "quiz-timetable": "Thời khoá biểu",
+    "quiz-timetable-saved": "Đã lưu thời khoá biểu",
+    "quiz-timetable-no-classroom": "Chưa có Lớp học nào - tạo Lớp học trước khi xếp thời khoá biểu.",
+    "quiz-timetable-no-subject": "Lớp này chưa có Môn học/Bài học nào - thêm Môn học và Bài học trước khi xếp thời khoá biểu.",
+    "quiz-timetable-day-empty": "Chưa có môn học nào trong ngày này",
+    "quiz-weekday-1": "Thứ Hai",
+    "quiz-weekday-2": "Thứ Ba",
+    "quiz-weekday-3": "Thứ Tư",
+    "quiz-weekday-4": "Thứ Năm",
+    "quiz-weekday-5": "Thứ Sáu",
+    "quiz-weekday-6": "Thứ Bảy",
+    "quiz-weekday-7": "Chủ Nhật",
+    "quiz-lessons": "Bài học"
   }
 }

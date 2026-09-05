@@ -561,6 +561,19 @@
     "invoice": "Invoice",
     "order-shipped": "Order shipped",
     "quiz-answer-all-required": "You must answer every question before submitting.",
-    "QUIZ_038": "All questions must be answered before submitting."
+    "QUIZ_038": "All questions must be answered before submitting.",
+    "quiz-timetable": "Timetable",
+    "quiz-timetable-saved": "Timetable saved",
+    "quiz-timetable-no-classroom": "No classroom yet - create a classroom before setting up a timetable.",
+    "quiz-timetable-no-subject": "This classroom has no subjects/lessons yet - add subjects and lessons before setting up the timetable.",
+    "quiz-timetable-day-empty": "No lessons scheduled for this day yet",
+    "quiz-weekday-1": "Monday",
+    "quiz-weekday-2": "Tuesday",
+    "quiz-weekday-3": "Wednesday",
+    "quiz-weekday-4": "Thursday",
+    "quiz-weekday-5": "Friday",
+    "quiz-weekday-6": "Saturday",
+    "quiz-weekday-7": "Sunday",
+    "quiz-lessons": "Lessons"
   }
 }
