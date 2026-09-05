@@ -28,7 +28,8 @@ import java.util.List;
  * Parent-facing weekly timetable ("thoi khoa bieu") CRUD for one Classroom - part 1 of the
  * feature added 2026-09-05, per the user's explicit request "tao chuc nang thoi khoa bieu trong 1
  * tuan cua con". See {@code TimetableEntry}'s javadoc for the full design (single persistent
- * template, no time-of-day, pins an exact Lesson, no separate volume/tap field). Behind {@link
+ * template, no time-of-day, Subject-level only as of the 2026-09-06 revision, no separate
+ * volume/tap field). Behind {@link
  * JwtAuthFilter} under {@code /api/parent/*}.
  */
 @Tag(name = "Parent - Timetable", description = "Weekly timetable (thoi khoa bieu) for one Classroom")
@@ -55,12 +56,12 @@ public class TimetableApi extends BaseCtl {
     }
 
     @Operation(
-            summary = "Replace one day's lesson list",
-            description = "REPLACES every entry for this classroom+dayOfWeek in one call - lessonIds order becomes orderIndex (0-based). Pass an empty list to clear the day."
+            summary = "Replace one day's subject list",
+            description = "REPLACES every entry for this classroom+dayOfWeek in one call - subjectIds order becomes orderIndex (0-based). Pass an empty list to clear the day."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Day updated - returns the whole week again"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "dayOfWeek not in 1..7, or a lessonId does not belong to a subject in this classroom - COMMON_002")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "dayOfWeek not in 1..7, or a subjectId does not belong to this classroom - COMMON_002")
     })
     @PutMapping("/classrooms/{classroomId}/timetable/{dayOfWeek}")
     public ResponseEntity<ApiResponse<List<TimetableEntryResponse>>> setDay(
@@ -76,7 +77,7 @@ public class TimetableApi extends BaseCtl {
             description = "Item 10 of the 2026-09-05 batch request (\"phu huynh xem duoc con da chuan bi bai cho ngay mai hay chua\") - read-only, same shape as the student's own GET /api/student/preparation/tomorrow. studentId must belong to the current parent."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Tomorrow's checklist for this student, each lesson flagged prepared/not"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Tomorrow's checklist for this student, each subject flagged prepared/not"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This student does not belong to the current parent - COMMON_004 FORBIDDEN"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No student with this id - COMMON_005 NOT_FOUND")
     })
