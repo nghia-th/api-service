@@ -422,6 +422,7 @@ public class StudentAttemptService extends IBase {
         for (AttemptAnswer answer : attemptAnswerRepository.query().eq(AttemptAnswer::getAttemptId, attemptId).list()) {
             answerByQuestionId.put(answer.getQuestionId(), answer);
         }
+        assertAllQuestionsAnswered(testQuestions, answerByQuestionId);
 
         int correctCount = 0;
         int scorableCount = 0;
@@ -480,6 +481,37 @@ public class StudentAttemptService extends IBase {
         logInfo("Attempt submitted: id={}, testId={}, studentId={}, correctCount={}, totalQuestions={}",
                 attempt.getId(), attempt.getTestId(), studentId, correctCount, attempt.getTotalQuestions());
         return SubmitAttemptResponse.from(attempt);
+    }
+
+    /**
+     * Guards {@link #submit} - throws {@link QuizErrorCode#ATTEMPT_NOT_ALL_ANSWERED} if any
+     * question on the test still has no recorded answer, per the user's explicit request
+     * (2026-09-05): "cho lam bai cua hoc sinh bat buoc phai tra loi het moi nop bai". "Answered"
+     * means exactly what the take-test screen's own "da tra loi X/Y" counter already counts as
+     * answered (see {@code TakeTest.tsx}'s {@code answeredCount}) - a MULTIPLE_CHOICE question
+     * needs a chosen {@code choiceId}; a SPEAKING question needs either a recorded {@code
+     * answerAudioPath} OR a non-blank {@code answerText} (either one is enough - the take-test
+     * screen lets the Student choose which mode(s) to use per {@code Question#getAnswerMode}).
+     * Runs BEFORE any grading/state mutation in {@link #submit} so a rejected submit leaves the
+     * attempt completely untouched (still resumable), matching the "always validate first" shape
+     * {@link #saveAnswers}/{@link #uploadSpeakingAnswer} already use for their own {@code
+     * ATTEMPT_ALREADY_SUBMITTED} guard.
+     */
+    private void assertAllQuestionsAnswered(List<TestQuestion> testQuestions, Map<Long, AttemptAnswer> answerByQuestionId) {
+        for (TestQuestion testQuestion : testQuestions) {
+            Question question = questionRepository.findById(testQuestion.getQuestionId());
+            AttemptAnswer answer = answerByQuestionId.get(testQuestion.getQuestionId());
+            boolean answered;
+            if (question != null && QuestionType.SPEAKING.name().equals(question.getQuestionType())) {
+                answered = answer != null && (answer.getAnswerAudioPath() != null
+                        || (answer.getAnswerText() != null && !answer.getAnswerText().isBlank()));
+            } else {
+                answered = answer != null && answer.getChoiceId() != null;
+            }
+            if (!answered) {
+                throw new BusinessException(QuizErrorCode.ATTEMPT_NOT_ALL_ANSWERED);
+            }
+        }
     }
 
     /**

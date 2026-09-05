@@ -60,7 +60,17 @@ import vn.org.thn.service.base.exception.ErrorCode;
  * became Admin-managed instead of a hardcoded 3-value list) guard {@code
  * CurriculumService#create}/{@code #update} (duplicate name) and {@code CurriculumService#delete}
  * (still referenced by a {@code LibraryDocument}) respectively - see {@code Curriculum}'s javadoc
- * for the full background.
+ * for the full background. {@code ATTEMPT_NOT_ALL_ANSWERED} (QUIZ_038, added 2026-09-05 per the
+ * user's explicit request: "cho lam bai cua hoc sinh bat buoc phai tra loi het moi nop bai") guards
+ * {@code StudentAttemptService#submit} - EVERY question on the test must have a recorded answer
+ * (a MULTIPLE_CHOICE question needs a chosen {@code choiceId}; a SPEAKING question needs either a
+ * recorded {@code answerAudioPath} OR a non-blank {@code answerText} - matching exactly how the
+ * take-test screen's own "da tra loi X/Y" counter already counts a SPEAKING question as answered,
+ * see {@code TakeTest.tsx}'s {@code answeredCount}) before {@code #submit} is allowed to grade and
+ * lock the attempt - the same rule is enforced again here server-side (not just the Submit button
+ * being disabled client-side) so a direct API call cannot bypass it, same "always validate both
+ * layers" convention as every other 2-tier check in this codebase (e.g. {@code
+ * LIBRARY_INVALID_TAXONOMY}).
  */
 public enum QuizErrorCode implements ErrorCode {
 
@@ -100,7 +110,8 @@ public enum QuizErrorCode implements ErrorCode {
     LIBRARY_PDF_TOO_LARGE("QUIZ_034", "Library document must be 50MB or smaller", HttpStatus.BAD_REQUEST),
     LIBRARY_ALREADY_LINKED("QUIZ_035", "This subject is already linked to this document", HttpStatus.CONFLICT),
     CURRICULUM_NAME_TAKEN("QUIZ_036", "A curriculum with this name already exists", HttpStatus.CONFLICT),
-    CURRICULUM_IN_USE("QUIZ_037", "Curriculum is still used by a library document - reassign or delete it first", HttpStatus.CONFLICT);
+    CURRICULUM_IN_USE("QUIZ_037", "Curriculum is still used by a library document - reassign or delete it first", HttpStatus.CONFLICT),
+    ATTEMPT_NOT_ALL_ANSWERED("QUIZ_038", "All questions must be answered before submitting", HttpStatus.BAD_REQUEST);
 
     private final String code;
     private final String message;
