@@ -46,7 +46,12 @@ import vn.org.thn.service.base.exception.ErrorCode;
  * feature) guards {@code AuthService#changePassword} - deliberately its OWN code rather than
  * reusing {@code INVALID_CREDENTIALS} (QUIZ_004), since this happens to an ALREADY-authenticated
  * caller (wrong old password on a change-password call), a different situation from a failed
- * login.
+ * login. {@code ROOT_ADMIN_CANNOT_BE_DELETED} (QUIZ_031, added 2026-09-05 for the Admin-manages-
+ * Admin feature - "root la tai khoan cao nhat, chi root xoa duoc Admin khac, khong ai xoa duoc
+ * root") guards {@code AdminManageService#delete} - deliberately its OWN code rather than reusing
+ * {@code CommonErrorCode.FORBIDDEN} (used by that same method for the OTHER rule, "caller is not
+ * root"): this is a different failure reason (caller IS root, but the TARGET row is the protected
+ * one), so the frontend/log can tell the two apart.
  */
 public enum QuizErrorCode implements ErrorCode {
 
@@ -79,7 +84,8 @@ public enum QuizErrorCode implements ErrorCode {
     ACCOUNT_DEACTIVATED("QUIZ_027", "This account has been deactivated by an administrator", HttpStatus.FORBIDDEN),
     QUESTION_VIDEO_INVALID_TYPE("QUIZ_028", "Question video must be an MP4, WebM, MOV or OGG file", HttpStatus.BAD_REQUEST),
     QUESTION_VIDEO_TOO_LARGE("QUIZ_029", "Question video must be 50MB or smaller", HttpStatus.BAD_REQUEST),
-    OLD_PASSWORD_INCORRECT("QUIZ_030", "Current password is incorrect", HttpStatus.BAD_REQUEST);
+    OLD_PASSWORD_INCORRECT("QUIZ_030", "Current password is incorrect", HttpStatus.BAD_REQUEST),
+    ROOT_ADMIN_CANNOT_BE_DELETED("QUIZ_031", "Root admin account cannot be deleted", HttpStatus.CONFLICT);
 
     private final String code;
     private final String message;
