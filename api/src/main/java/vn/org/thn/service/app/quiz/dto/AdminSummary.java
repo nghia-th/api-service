@@ -11,6 +11,8 @@ import java.time.LocalDateTime;
  * Admin needs to see" shape as {@link AdminParentSummary}. {@code root} is already on {@link
  * AdminResponse} too (needed there for {@code quizProfile} at login) - repeated here so the list
  * table can show which row is the protected bootstrap account without a second lookup.
+ * {@code username}/{@code phone} (2026-09-05) - the alternate login identifiers, shown so the
+ * root Admin can see which accounts have set one yet.
  */
 @Data
 public class AdminSummary {
@@ -18,6 +20,8 @@ public class AdminSummary {
     private String fullName;
     private String email;
     private boolean root;
+    private String username;
+    private String phone;
     private LocalDateTime createdAt;
 
     public static AdminSummary from(Admin admin) {
@@ -26,6 +30,8 @@ public class AdminSummary {
         response.fullName = admin.getFullName();
         response.email = admin.getEmail();
         response.root = admin.isRoot();
+        response.username = admin.getUsername();
+        response.phone = admin.getPhone();
         response.createdAt = admin.getCreatedAt();
         return response;
     }

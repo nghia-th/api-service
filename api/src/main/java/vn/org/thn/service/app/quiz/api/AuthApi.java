@@ -72,12 +72,12 @@ public class AuthApi extends BaseCtl {
 
     @Operation(
             summary = "Parent login",
-            description = "Returns the token used by every endpoint under /api/parent/**."
+            description = "Accepts the Parent's email, username, OR phone as identifier (2026-09-05). Returns the token used by every endpoint under /api/parent/**."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Logged in successfully - returns a token plus the Parent's info"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "email/password missing - COMMON_001"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Email not found or wrong password - one shared error, never reveals which one it was - QUIZ_004 INVALID_CREDENTIALS"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "identifier/password missing - COMMON_001"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "No account matches that email/username/phone, or wrong password - one shared error, never reveals which one it was - QUIZ_004 INVALID_CREDENTIALS"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This account has been deactivated by an administrator - QUIZ_027 ACCOUNT_DEACTIVATED")
     })
     @PostMapping("/parent/login")
@@ -102,12 +102,12 @@ public class AuthApi extends BaseCtl {
 
     @Operation(
             summary = "Admin login",
-            description = "No self-registration - the first (and, in v1, only) Admin row is bootstrapped at startup, see AdminBootstrapRunner. Returns the token used by every endpoint under /api/admin/**."
+            description = "Accepts the Admin's email, username, OR phone as identifier (2026-09-05). No self-registration - the first (and, in v1, only) Admin row is bootstrapped at startup, see AdminBootstrapRunner. Returns the token used by every endpoint under /api/admin/**."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Logged in successfully - returns a token plus the Admin's info"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "email/password missing - COMMON_001"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Email not found or wrong password - one shared error - QUIZ_004 INVALID_CREDENTIALS")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "identifier/password missing - COMMON_001"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "No account matches that email/username/phone, or wrong password - one shared error - QUIZ_004 INVALID_CREDENTIALS")
     })
     @PostMapping("/admin/login")
     public ResponseEntity<ApiResponse<AdminAuthResponse>> loginAdmin(@Valid @RequestBody AdminLoginRequest request) {

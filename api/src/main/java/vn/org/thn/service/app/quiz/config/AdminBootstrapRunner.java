@@ -31,9 +31,20 @@ import java.time.LocalDateTime;
  * the old application.yaml-config approach, this is now the ONLY way to change it (no more "edit
  * the DB by hand" gap).
  * <p>
- * Only ever creates the FIRST row - if an Admin already exists (table non-empty), this is a no-op
- * on every subsequent startup, so root's password (once changed) is never silently reset back to
- * {@code "root"} by a restart.
+ * Only ever creates the row if MISSING - checked by {@code email = ROOT_EMAIL} specifically
+ * (2026-09-06, fixed - see below), NOT "table is empty", so root's password (once changed) is
+ * never silently reset back to {@code "root"} by a restart.
+ * <p>
+ * <b>2026-09-06 bug fix:</b> the ORIGINAL check here was {@code adminRepository.exists()} (ANY
+ * row present, table-wide) - anh reported after testing that the root account was never actually
+ * created. Root cause: this service pre-dates the {@code root}/{@code root} feature - a database
+ * that already had 1+ Admin row from the OLD {@code quiz.admin.bootstrap-email}/{@code
+ * bootstrap-password} application.yaml-config bootstrap (or any other pre-existing Admin) makes
+ * {@code exists()} true forever, so this runner silently no-ops on EVERY startup and root never
+ * gets created - the exact symptom anh hit. Fixed by checking for {@code email = ROOT_EMAIL}
+ * specifically instead of "any row" - this guarantees the root account gets created exactly once
+ * whenever it is missing, regardless of how many OTHER Admin rows already exist, while still
+ * never touching/recreating it once it exists (so a changed root password is still never reset).
  */
 @Component
 public class AdminBootstrapRunner implements ApplicationRunner {
@@ -51,7 +62,7 @@ public class AdminBootstrapRunner implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        if (adminRepository.exists()) {
+        if (adminRepository.query().eq(Admin::getEmail, ROOT_EMAIL).exists()) {
             return;
         }
 

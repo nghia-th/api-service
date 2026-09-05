@@ -40,6 +40,16 @@ import vn.org.thn.service.base.entity.BaseEntity;
  * Student#getTokenVersion()} (force-logout, see {@code AuthService}'s javadoc) - included here
  * too so an Admin session can also be force-logged-out consistently (now also triggered by a
  * self-service password change, see {@code AuthService#changePassword}).
+ * <p>
+ * {@code username}/{@code phone} (2026-09-05) - OPTIONAL alternate login identifiers, per the
+ * user's explicit request that both Admin and Parent be able to log in with email, username, OR
+ * phone (not just email). Both are nullable with NO backfill for existing rows - an Admin created
+ * before this feature simply has neither until it calls the new self-service "set username"
+ * endpoint ({@code AccountApi}/{@code AuthService#setUsername}); {@code phone} for now can only be
+ * set at creation time ({@code AdminManageService#create}), same as Parent's {@code phone}. Each
+ * is unique within the {@code admin} table only (see the {@code uq_admin_username} constraint) -
+ * NOT cross-checked against Parent/Student, same as {@code email} already isn't. See {@code
+ * AuthService#loginAdmin} for the actual email-OR-username-OR-phone lookup.
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -60,4 +70,6 @@ public class Admin extends BaseEntity {
     private String fullName;
     private int tokenVersion = 0;
     private boolean root = false;
+    private String username;
+    private String phone;
 }

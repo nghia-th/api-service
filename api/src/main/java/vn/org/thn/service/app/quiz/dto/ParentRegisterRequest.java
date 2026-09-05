@@ -27,4 +27,8 @@ public class ParentRegisterRequest {
 
     @Schema(type = "string", example = "0912345678", description = "Phone number (optional)")
     private String phone;
+
+    @Size(max = 100)
+    @Schema(type = "string", example = "jane.parent", description = "Optional alternate login identifier, unique among Parent accounts - leave blank to set later (2026-09-05)")
+    private String username;
 }

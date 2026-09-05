@@ -4,13 +4,19 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
-/** Request body for {@code POST /api/auth/parent/login}. */
+/**
+ * Request body for {@code POST /api/auth/parent/login}.
+ * <p>
+ * {@code identifier} (2026-09-05, renamed from {@code email}) - accepts the Parent's email,
+ * username, OR phone, per the user's explicit request to allow logging in with any of the 3. See
+ * {@code AuthService#loginParent} for the actual lookup (tries all 3 columns).
+ */
 @Data
 public class ParentLoginRequest {
 
     @NotBlank
-    @Schema(type = "string", example = "parent@example.com", description = "Registered email")
-    private String email;
+    @Schema(type = "string", example = "parent@example.com", description = "Parent's email, username, or phone")
+    private String identifier;
 
     @NotBlank
     @Schema(type = "string", example = "Secret123", description = "Password")

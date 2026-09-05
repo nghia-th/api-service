@@ -74,6 +74,11 @@ public class AdminManageService extends IBase {
         if (adminRepository.query().eq(Admin::getEmail, request.getEmail()).exists()) {
             throw new BusinessException(QuizErrorCode.EMAIL_TAKEN);
         }
+        // Optional (2026-09-05) - see AdminCreateRequest#username's javadoc.
+        String username = normalizeOptional(request.getUsername());
+        if (username != null && adminRepository.query().eq(Admin::getUsername, username).exists()) {
+            throw new BusinessException(QuizErrorCode.USERNAME_TAKEN);
+        }
 
         LocalDateTime now = LocalDateTime.now();
         String actor = "admin:" + callerId;
@@ -83,6 +88,8 @@ public class AdminManageService extends IBase {
         admin.setEmail(request.getEmail());
         admin.setPassword(passwordEncoder.encode(request.getPassword()));
         admin.setRoot(false);
+        admin.setUsername(username);
+        admin.setPhone(normalizeOptional(request.getPhone()));
         admin.setCreatedAt(now);
         admin.setUpdatedAt(now);
         admin.setCreatedBy(actor);
@@ -123,6 +130,13 @@ public class AdminManageService extends IBase {
         tokenVersionCache.evict(Role.ADMIN, id);
 
         logInfo("Admin deleted by root: id={}, rootId={}", id, callerId);
+    }
+
+    /** Trims blank/whitespace-only input to null (treated as "leave unset"), otherwise returns the trimmed value - same convention as {@code AuthService#normalizeUsername}. */
+    private String normalizeOptional(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     /**

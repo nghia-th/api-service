@@ -45,6 +45,18 @@ public class Parent extends BaseEntity {
     private String phone;
 
     /**
+     * OPTIONAL alternate login identifier (2026-09-05), alongside {@code email}/{@code phone} -
+     * per the user's explicit request that Parent (and Admin) be able to log in with email,
+     * username, OR phone. Nullable with NO backfill for existing rows - a Parent registered before
+     * this feature simply has none until it calls the new self-service "set username" endpoint
+     * ({@code AccountApi}/{@code AuthService#setUsername}). Unique within the {@code parent} table
+     * only (see the {@code uq_parent_username} constraint) - NOT cross-checked against Admin/
+     * Student, same as {@code email} already isn't. See {@code AuthService#loginParent} for the
+     * actual email-OR-username-OR-phone lookup.
+     */
+    private String username;
+
+    /**
      * Bumped by {@code AuthService#logoutAll()} (force-logout) - every already-issued access
      * token for this Parent embeds the tokenVersion it was minted with, and {@code
      * JwtAuthFilter} rejects a request whose token's version no longer matches this column. This

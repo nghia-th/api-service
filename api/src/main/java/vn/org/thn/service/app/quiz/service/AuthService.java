@@ -31,6 +31,7 @@ import vn.org.thn.service.app.quiz.security.Role;
 import vn.org.thn.service.app.quiz.security.TokenVersionCache;
 import vn.org.thn.service.base.IBase;
 import vn.org.thn.service.base.exception.BusinessException;
+import vn.org.thn.service.base.exception.CommonErrorCode;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -115,6 +116,12 @@ public class AuthService extends IBase {
         if (parentRepository.query().eq(Parent::getEmail, request.getEmail()).exists()) {
             throw new BusinessException(QuizErrorCode.EMAIL_TAKEN);
         }
+        // Optional (2026-09-05) - a self-registering Parent may set a username right away, or
+        // leave it blank and set one later via POST /api/parent/set-username (see #setUsername).
+        String username = normalizeUsername(request.getUsername());
+        if (username != null && parentRepository.query().eq(Parent::getUsername, username).exists()) {
+            throw new BusinessException(QuizErrorCode.USERNAME_TAKEN);
+        }
 
         LocalDateTime now = LocalDateTime.now();
         Parent parent = new Parent();
@@ -122,6 +129,7 @@ public class AuthService extends IBase {
         parent.setEmail(request.getEmail());
         parent.setPassword(passwordEncoder.encode(request.getPassword()));
         parent.setPhone(request.getPhone());
+        parent.setUsername(username);
         parent.setCreatedAt(now);
         parent.setUpdatedAt(now);
         parent.setCreatedBy(request.getEmail());
@@ -135,8 +143,15 @@ public class AuthService extends IBase {
     }
 
     public ParentAuthResponse loginParent(ParentLoginRequest request) {
-        Parent parent = parentRepository.query().eq(Parent::getEmail, request.getEmail()).one();
-        // Same error for "no such email" and "wrong password" - never reveal which one it was (see task 1 spec).
+        // Tries email, username, then phone (2026-09-05) - see ParentLoginRequest#identifier's
+        // javadoc. orEq() is OR-joined with the eq() before it, so this renders a single
+        // "email = :id OR username = :id OR phone = :id" query, not 3 separate lookups.
+        Parent parent = parentRepository.query()
+                .eq(Parent::getEmail, request.getIdentifier())
+                .orEq(Parent::getUsername, request.getIdentifier())
+                .orEq(Parent::getPhone, request.getIdentifier())
+                .one();
+        // Same error for "no matching identifier" and "wrong password" - never reveal which one it was (see task 1 spec).
         if (parent == null || !passwordEncoder.matches(request.getPassword(), parent.getPassword())) {
             throw new BusinessException(QuizErrorCode.INVALID_CREDENTIALS);
         }
@@ -168,7 +183,13 @@ public class AuthService extends IBase {
 
     /** Admin login - no self-registration, see {@code entity/Admin.java}'s javadoc for how the first Admin row is created. */
     public AdminAuthResponse loginAdmin(AdminLoginRequest request) {
-        Admin admin = adminRepository.query().eq(Admin::getEmail, request.getEmail()).one();
+        // Tries email, username, then phone (2026-09-05) - see AdminLoginRequest#identifier's
+        // javadoc, same OR-query shape as #loginParent above.
+        Admin admin = adminRepository.query()
+                .eq(Admin::getEmail, request.getIdentifier())
+                .orEq(Admin::getUsername, request.getIdentifier())
+                .orEq(Admin::getPhone, request.getIdentifier())
+                .one();
         if (admin == null || !passwordEncoder.matches(request.getPassword(), admin.getPassword())) {
             throw new BusinessException(QuizErrorCode.INVALID_CREDENTIALS);
         }
@@ -303,6 +324,56 @@ public class AuthService extends IBase {
 
         invalidateSessions(userId, role);
         logInfo("Password changed (self-service): userId={}, role={}", userId, role);
+    }
+
+    /**
+     * Self-service "set/change username" for the CURRENT caller ({@link CurrentUser#get()}) -
+     * Parent or Admin only (2026-09-05, per the user's explicit request that both roles support
+     * logging in by email/username/phone). Not offered to Student, which already always has a
+     * username set at creation time. Unlike {@link #changePassword}, this does NOT force-logout -
+     * a username is not a secret, so an in-flight session isn't compromised by someone else
+     * learning it, unlike a password change.
+     */
+    public void setUsername(String username) {
+        CurrentUser current = CurrentUser.get();
+        Role role = current.role();
+        Long userId = current.userId();
+        String normalized = normalizeUsername(username);
+
+        if (role == Role.PARENT) {
+            if (normalized != null && parentRepository.query().eq(Parent::getUsername, normalized).ne(Parent::getId, userId).exists()) {
+                throw new BusinessException(QuizErrorCode.USERNAME_TAKEN);
+            }
+            Parent parent = parentRepository.findById(userId);
+            if (parent != null) {
+                parent.setUsername(normalized);
+                parent.setUpdatedAt(LocalDateTime.now());
+                parentRepository.save(parent);
+            }
+        } else if (role == Role.ADMIN) {
+            if (normalized != null && adminRepository.query().eq(Admin::getUsername, normalized).ne(Admin::getId, userId).exists()) {
+                throw new BusinessException(QuizErrorCode.USERNAME_TAKEN);
+            }
+            Admin admin = adminRepository.findById(userId);
+            if (admin != null) {
+                admin.setUsername(normalized);
+                admin.setUpdatedAt(LocalDateTime.now());
+                adminRepository.save(admin);
+            }
+        } else {
+            // Student already always has a username - nothing to do, but no error either;
+            // AccountApi simply doesn't expose this endpoint under /api/student/**.
+            throw new BusinessException(CommonErrorCode.FORBIDDEN);
+        }
+
+        logInfo("Username set: userId={}, role={}", userId, role);
+    }
+
+    /** Trims blank/whitespace-only input to null (treated as "leave unset"), otherwise returns the trimmed value - shared by {@link #registerParent} and {@link #setUsername}. */
+    private String normalizeUsername(String username) {
+        if (username == null) return null;
+        String trimmed = username.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     /**

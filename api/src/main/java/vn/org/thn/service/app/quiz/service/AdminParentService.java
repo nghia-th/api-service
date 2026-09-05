@@ -132,6 +132,14 @@ public class AdminParentService extends IBase {
         if (parentRepository.query().eq(Parent::getEmail, request.getEmail()).exists()) {
             throw new BusinessException(QuizErrorCode.EMAIL_TAKEN);
         }
+        // Optional (2026-09-05) - see ParentRegisterRequest#username's javadoc.
+        String username = request.getUsername() == null ? null : request.getUsername().trim();
+        if (username != null && username.isEmpty()) {
+            username = null;
+        }
+        if (username != null && parentRepository.query().eq(Parent::getUsername, username).exists()) {
+            throw new BusinessException(QuizErrorCode.USERNAME_TAKEN);
+        }
 
         Long adminId = CurrentUser.get().userId();
         LocalDateTime now = LocalDateTime.now();
@@ -142,6 +150,7 @@ public class AdminParentService extends IBase {
         parent.setEmail(request.getEmail());
         parent.setPassword(passwordEncoder.encode(request.getPassword()));
         parent.setPhone(request.getPhone());
+        parent.setUsername(username);
         parent.setActive(true);
         parent.setCreatedAt(now);
         parent.setUpdatedAt(now);

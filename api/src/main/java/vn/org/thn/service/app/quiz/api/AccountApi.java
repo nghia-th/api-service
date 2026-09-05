@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import vn.org.thn.service.app.quiz.dto.ChangePasswordRequest;
+import vn.org.thn.service.app.quiz.dto.SetUsernameRequest;
 import vn.org.thn.service.app.quiz.service.AuthService;
 import vn.org.thn.service.base.controller.BaseCtl;
 import vn.org.thn.service.base.response.ApiResponse;
@@ -74,6 +75,38 @@ public class AccountApi extends BaseCtl {
     @PostMapping("/api/admin/change-password")
     public ResponseEntity<ApiResponse<Void>> changePasswordAdmin(@Valid @RequestBody ChangePasswordRequest request) {
         authService.changePassword(request.getOldPassword(), request.getNewPassword());
+        return ok();
+    }
+
+    @Operation(
+            summary = "Set this Parent's own username",
+            description = "Sets/changes the alternate login identifier used alongside email/phone (2026-09-05) - see AuthService#setUsername. Does NOT force-logout, unlike change-password."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Username set"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "username missing/too short - COMMON_001"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Missing/invalid/expired token - QUIZ_001 UNAUTHORIZED"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Username already taken by another Parent - QUIZ_003 USERNAME_TAKEN")
+    })
+    @PostMapping("/api/parent/set-username")
+    public ResponseEntity<ApiResponse<Void>> setUsernameParent(@Valid @RequestBody SetUsernameRequest request) {
+        authService.setUsername(request.getUsername());
+        return ok();
+    }
+
+    @Operation(
+            summary = "Set this Admin's own username",
+            description = "Same as POST /api/parent/set-username, for an Admin-role token."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Username set"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "username missing/too short - COMMON_001"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Missing/invalid/expired token - QUIZ_001 UNAUTHORIZED"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Username already taken by another Admin - QUIZ_003 USERNAME_TAKEN")
+    })
+    @PostMapping("/api/admin/set-username")
+    public ResponseEntity<ApiResponse<Void>> setUsernameAdmin(@Valid @RequestBody SetUsernameRequest request) {
+        authService.setUsername(request.getUsername());
         return ok();
     }
 }
