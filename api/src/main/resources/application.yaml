@@ -24,12 +24,12 @@ mybatis:
 
 base:
   database:
-    type: POSTGRESQL              # SQLITE / POSTGRESQL / MYSQL / SQLSERVER / ORACLE (mac dinh SQLITE)
+    type: SQLITE              # SQLITE / POSTGRESQL / MYSQL / SQLSERVER / ORACLE (mac dinh SQLITE)
     db-name: quiz_db              # ten database thuc te (mac dinh "app")
     dbPrefix: dev                 # ghep truoc db-name -> "dev_quiz_db" (mac dinh rong "")
     sql-log: OFF                  # OFF / BASIC / FULL (mac dinh OFF)
     pool:
-      max-pool-size: 5            # HikariCP (mac dinh 5) //sqlite set 1
+      max-pool-size: 1            # HikariCP (mac dinh 5) //sqlite set 1
       min-idle: 1                 # HikariCP (mac dinh 1)
     postgresql:
       host: localhost             # mac dinh localhost
