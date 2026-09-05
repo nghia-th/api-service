@@ -1,6 +1,7 @@
 package vn.org.thn.service.app.quiz.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -49,6 +50,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -149,7 +151,7 @@ public class StudentAttemptService extends IBase {
         Long studentId = CurrentUser.get().userId();
         Test test = getOwnedTestOrThrow(testId, studentId);
 
-        Attempt attempt = attemptRepository.query().eq(Attempt::getTestId, testId).one();
+        Attempt attempt = findAttemptForTest(testId);
         if (attempt == null) {
             throw new BusinessException(CommonErrorCode.NOT_FOUND, "No attempt for this test yet");
         }
@@ -307,7 +309,7 @@ public class StudentAttemptService extends IBase {
         Long studentId = CurrentUser.get().userId();
         getOwnedTestOrThrow(testId, studentId);
 
-        Attempt attempt = attemptRepository.query().eq(Attempt::getTestId, testId).one();
+        Attempt attempt = findAttemptForTest(testId);
         if (attempt == null) {
             List<TestQuestion> testQuestions = testQuestionRepository.query().eq(TestQuestion::getTestId, testId).list();
             LocalDateTime now = LocalDateTime.now();
@@ -324,11 +326,49 @@ public class StudentAttemptService extends IBase {
             attempt.setUpdatedAt(now);
             attempt.setCreatedBy("student:" + studentId);
             attempt.setUpdatedBy("student:" + studentId);
-            attempt = attemptRepository.save(attempt);
-            logInfo("Attempt started: id={}, testId={}, studentId={}", attempt.getId(), testId, studentId);
+            try {
+                attempt = attemptRepository.save(attempt);
+                logInfo("Attempt started: id={}, testId={}, studentId={}", attempt.getId(), testId, studentId);
+            } catch (DuplicateKeyException e) {
+                // Lost a race against a concurrent #start call for the same testId (2 browser tabs,
+                // a double-tap before navigation settles, etc.) - attempt.test_id now has a DB-level
+                // unique constraint (V19__attempt_unique_test_id.sql) that rejected our insert
+                // because the other request's row already committed first. That row is now visible
+                // - reuse it instead of failing the request, so #start stays idempotent even under
+                // this race (see findAttemptForTest's javadoc for why this exact bug used to leak
+                // into #getOwnAttemptReport as a false "QUIZ_013 ATTEMPT_NOT_SUBMITTED").
+                attempt = findAttemptForTest(testId);
+                if (attempt == null) {
+                    throw e;
+                }
+                logInfo("Attempt start race lost, reusing the winning row: id={}, testId={}, studentId={}", attempt.getId(), testId, studentId);
+            }
         }
 
         return new StartAttemptResponse(attempt.getId(), studentQuestionsOf(testId, attempt.getId()));
+    }
+
+    /**
+     * The canonical Attempt for a Test - tolerates a legacy data problem where 2 Attempt rows
+     * existed for the same testId (possible before {@code attempt.test_id} had a DB-level unique
+     * constraint, see {@code V19__attempt_unique_test_id.sql} - a concurrent double {@link #start}
+     * call, e.g. the same Test opened in 2 browser tabs, could both see "no attempt yet" and both
+     * insert). Plain {@code .one()} with no {@code ORDER BY} picks an arbitrary row when more than
+     * 1 matches, which is exactly how a Student who genuinely submitted could still hit {@code
+     * QUIZ_013 ATTEMPT_NOT_SUBMITTED} from {@link #getOwnAttemptReport} - #submit always updates
+     * the correct row (it is looked up by attemptId, not testId), but a fresh by-testId query could
+     * land on the OTHER, never-submitted duplicate instead. Prefers the SUBMITTED row when one
+     * exists (that is always the one the Student actually finished - insert order does not track
+     * which of 2 racing rows their browser kept using for chooseAnswer/submit), else falls back to
+     * the most recently created row. Returns null only when the Test truly has no Attempt yet.
+     */
+    private Attempt findAttemptForTest(Long testId) {
+        List<Attempt> attempts = attemptRepository.query().eq(Attempt::getTestId, testId).list();
+        return attempts.stream()
+                .max(Comparator
+                        .comparing((Attempt a) -> a.getSubmittedAt() != null)
+                        .thenComparing(Attempt::getId))
+                .orElse(null);
     }
 
     @Transactional
