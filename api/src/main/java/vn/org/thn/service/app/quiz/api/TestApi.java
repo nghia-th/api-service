@@ -6,6 +6,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,11 +16,16 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.PracticeGenerateRequest;
+import vn.org.thn.service.app.quiz.dto.PracticeImportResponse;
+import vn.org.thn.service.app.quiz.dto.TemplateFile;
 import vn.org.thn.service.app.quiz.dto.TestCreateRequest;
 import vn.org.thn.service.app.quiz.dto.TestDetailResponse;
 import vn.org.thn.service.app.quiz.dto.TestResponse;
+import vn.org.thn.service.app.quiz.service.PracticeImportService;
 import vn.org.thn.service.app.quiz.service.TestService;
 import vn.org.thn.service.base.controller.BaseCtl;
 import vn.org.thn.service.base.response.ApiResponse;
@@ -37,6 +44,9 @@ public class TestApi extends BaseCtl {
 
     @Autowired
     private TestService testService;
+
+    @Autowired
+    private PracticeImportService practiceImportService;
 
     @Operation(
             summary = "Create and assign a test",
@@ -66,6 +76,37 @@ public class TestApi extends BaseCtl {
     @PostMapping("/practice")
     public ResponseEntity<ApiResponse<TestResponse>> generatePractice(@Valid @RequestBody PracticeGenerateRequest request) {
         return ok(testService.generatePractice(request));
+    }
+
+    @Operation(
+            summary = "Download the practice-test bulk import template",
+            description = "Returns a ready-to-fill Excel (default) or CSV file with the fixed 3-column layout (Ten dang nhap hoc sinh/Ten mon hoc/So cau hoi) plus one illustrative example row, which the import endpoint recognizes and skips automatically whether or not it is deleted before uploading. Same shape as LessonApi#importTemplate."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the template file (Content-Type set per the requested format)")
+    })
+    @GetMapping("/practice/import-template")
+    public ResponseEntity<byte[]> practiceImportTemplate(
+            @Parameter(description = "\"xlsx\" (default) or \"csv\"") @RequestParam(required = false, defaultValue = "xlsx") String format) {
+        TemplateFile template = practiceImportService.generateTemplate(format);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(template.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + template.filename() + "\"")
+                .body(template.content());
+    }
+
+    @Operation(
+            summary = "Bulk-generate practice tests (Ôn tập) from an Excel/CSV file",
+            description = "Best-effort per row - one bad row does not stop the others in the same file. Each row names its own Student (by login username) and Subject (by name) - unlike the single POST /api/parent/tests/practice call, a bulk import can span many different Students/Subjects in one file. Every row still gets a freshly-randomized question set from TestService#generatePractice, exactly like the single-call button - this is NOT a mode for hand-picking specific questions via the file."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "File was read - check the response body for per-row errors, if any (this is 200 even when some/all rows failed, since the request itself succeeded)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "File could not be read at all (wrong format/corrupt/empty), or has more rows than the per-import limit - QUIZ_012 or QUIZ_011")
+    })
+    @PostMapping(value = "/practice/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<PracticeImportResponse>> practiceImportFile(
+            @Parameter(description = "The .xlsx or .csv file, filled in from the downloaded template") @RequestPart MultipartFile file) {
+        return ok(practiceImportService.importFile(file));
     }
 
     @Operation(
