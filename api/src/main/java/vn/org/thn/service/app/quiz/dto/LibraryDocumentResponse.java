@@ -15,6 +15,11 @@ public class LibraryDocumentResponse {
     private String volume;
     private String title;
     private long fileSize;
+    // 2026-09-05 (item 1 of the 11-item batch request) - a row created via bulk import has no
+    // file yet (LibraryService#createMetadataOnly stores filePath="" rather than a nullable
+    // column - see that method's javadoc); the frontend uses this flag to show an "upload PDF"
+    // action for such rows instead of the normal view/download icons.
+    private boolean hasFile;
     private LocalDateTime createdAt;
 
     public static LibraryDocumentResponse from(LibraryDocument doc) {
@@ -26,6 +31,7 @@ public class LibraryDocumentResponse {
         response.volume = doc.getVolume();
         response.title = doc.getTitle();
         response.fileSize = doc.getFileSize();
+        response.hasFile = doc.getFilePath() != null && !doc.getFilePath().isBlank();
         response.createdAt = doc.getCreatedAt();
         return response;
     }

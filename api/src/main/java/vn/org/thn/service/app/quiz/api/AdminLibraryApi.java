@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -19,7 +20,10 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.LibraryDocumentResponse;
 import vn.org.thn.service.app.quiz.dto.LibraryFile;
+import vn.org.thn.service.app.quiz.dto.LibraryImportResponse;
+import vn.org.thn.service.app.quiz.dto.TemplateFile;
 import vn.org.thn.service.app.quiz.security.JwtAuthFilter;
+import vn.org.thn.service.app.quiz.service.LibraryImportService;
 import vn.org.thn.service.app.quiz.service.LibraryService;
 import vn.org.thn.service.base.controller.BaseCtl;
 import vn.org.thn.service.base.response.ApiResponse;
@@ -39,6 +43,9 @@ public class AdminLibraryApi extends BaseCtl {
 
     @Autowired
     private LibraryService libraryService;
+
+    @Autowired
+    private LibraryImportService libraryImportService;
 
     @Operation(
             summary = "List/search library documents",
@@ -103,5 +110,52 @@ public class AdminLibraryApi extends BaseCtl {
                 .contentType(MediaType.parseMediaType(file.contentType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + file.filename() + "\"")
                 .body(file.content());
+    }
+
+    @Operation(
+            summary = "Download the library import template",
+            description = "Returns a ready-to-fill Excel (default) or CSV file with the fixed 5-column layout (Lop/Mon hoc/Bo sach/Tap/Tieu de) plus one illustrative example row, which the import endpoint recognizes and skips automatically whether or not it is deleted before uploading."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the template file (Content-Type set per the requested format)")
+    })
+    @GetMapping("/import-template")
+    public ResponseEntity<byte[]> importTemplate(
+            @Parameter(description = "\"xlsx\" (default) or \"csv\"") @RequestParam(required = false, defaultValue = "xlsx") String format) {
+        TemplateFile template = libraryImportService.generateTemplate(format);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(template.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + template.filename() + "\"")
+                .body(template.content());
+    }
+
+    @Operation(
+            summary = "Bulk-import library documents (metadata only) from an Excel/CSV file",
+            description = "Best-effort per row - one bad row does not stop the others in the same file. Every row creates a metadata-only document (no PDF yet, see LibraryService#createMetadataOnly) - upload each row's actual PDF afterward via PUT /{id}/file. A row that exactly duplicates an existing grade+subjectName+curriculum+volume combination is reported as an error and skipped."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "File was read - check the response body for per-row errors, if any (this is 200 even when some/all rows failed, since the request itself succeeded)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "File could not be read at all (wrong format/corrupt/empty), or has more rows than the per-import limit - QUIZ_012 or QUIZ_011")
+    })
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<LibraryImportResponse>> importFile(
+            @Parameter(description = "The .xlsx or .csv file, filled in from the downloaded template") @RequestPart MultipartFile file) {
+        return ok(libraryImportService.importFile(file));
+    }
+
+    @Operation(
+            summary = "Attach (or replace) a library document's PDF file",
+            description = "Used to upload the actual PDF for a metadata-only row created via import (LibraryDocumentResponse#hasFile is false), but also works as a general \"replace the PDF\" action for a row that already has one - the old file (if any) is deleted from disk first."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Attached successfully - returns the updated library document (hasFile=true)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Wrong file type - QUIZ_033, or file too large - QUIZ_034"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No library document with this id - COMMON_005 NOT_FOUND")
+    })
+    @PutMapping(value = "/{id}/file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<LibraryDocumentResponse>> attachFile(
+            @Parameter(description = "Library document id") @PathVariable Long id,
+            @Parameter(description = "The PDF file") @RequestPart MultipartFile file) {
+        return ok(libraryService.attachFile(id, file));
     }
 }

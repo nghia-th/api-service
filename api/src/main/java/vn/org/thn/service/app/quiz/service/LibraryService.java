@@ -97,10 +97,113 @@ public class LibraryService extends IBase {
 
     /** Admin-only (enforced by {@code JwtAuthFilter}'s {@code /api/admin/*} prefix, no further root check - see this class's javadoc). Validates grade against the 1-12 range and curriculum against the Admin-managed Curriculum list, and the file against {@link #ALLOWED_PDF_TYPES}/{@link #MAX_PDF_SIZE_BYTES} before anything is written to disk. */
     public LibraryDocumentResponse upload(int grade, String subjectName, String curriculum, String volume, String title, MultipartFile file) {
-        if (grade < MIN_GRADE || grade > MAX_GRADE
-                || !curriculumRepository.query().eq(Curriculum::getName, curriculum).exists()) {
+        validateTaxonomy(grade, curriculum);
+        String filename = saveFileOrThrow(file);
+        LibraryDocument doc = buildAndSaveRow(grade, subjectName, curriculum, volume, title, filename, file.getSize());
+
+        logInfo("Library document uploaded: id={}, grade={}, subjectName={}, curriculum={}, adminId={}",
+                doc.getId(), grade, subjectName, curriculum, CurrentUser.get().userId());
+        return LibraryDocumentResponse.from(doc);
+    }
+
+    /**
+     * Creates a library document row with NO file attached yet (2026-09-05, item 1 of the
+     * 11-item batch request, "cho phep import file [danh sach sach] sau do upload sach giao khoa
+     * sau" - the Admin bulk-imports the METADATA rows from a spreadsheet first, then attaches
+     * each row's actual PDF afterward via {@link #attachFile} one at a time, since a spreadsheet
+     * cannot carry file bytes). Used only by {@code LibraryImportService} - never exposed as its
+     * own endpoint (there is no product reason to create a permanently file-less row by hand).
+     * <p>
+     * "No file yet" is represented as {@code filePath=""}/{@code fileSize=0} rather than a schema
+     * change (both columns are NOT NULL - see {@code V1__init.sql}) - a real migration to make
+     * them nullable was considered and rejected as unnecessary risk for a purely cosmetic
+     * distinction; {@link LibraryDocumentResponse#isHasFile()} treats a blank {@code filePath} as
+     * "no file" either way.
+     */
+    LibraryDocumentResponse createMetadataOnly(int grade, String subjectName, String curriculum, String volume, String title) {
+        validateTaxonomy(grade, curriculum);
+        LibraryDocument doc = buildAndSaveRow(grade, subjectName, curriculum, volume, title, "", 0L);
+        logInfo("Library document created without file (import): id={}, grade={}, subjectName={}, curriculum={}, adminId={}",
+                doc.getId(), grade, subjectName, curriculum, CurrentUser.get().userId());
+        return LibraryDocumentResponse.from(doc);
+    }
+
+    /**
+     * Whether a NON-DELETED row already has this exact grade+subjectName+curriculum+volume
+     * combination - used only by {@code LibraryImportService} to reject a duplicate row during
+     * import (AskUserQuestion 2026-09-05: "bao loi dong do, bo qua" - skip and report the row
+     * rather than silently creating a second copy or silently merging). {@code volume} is
+     * normalized the same way {@link #buildAndSaveRow} stores it (blank/null both mean "no
+     * volume") so "" and {@code null} are never treated as different volumes here.
+     */
+    boolean existsExact(int grade, String subjectName, String curriculum, String volume) {
+        String normalizedVolume = (volume == null || volume.isBlank()) ? null : volume.trim();
+        // eq(field, null) is a NO-OP in this query builder (means "don't filter on this field" -
+        // see list()'s intentional use of that for optional search filters), so a null volume
+        // must use isNull() explicitly here - eq() would otherwise match ANY volume instead of
+        // specifically "no volume", turning every "Toan lop 4, Ket noi tri thuc, khong Tap" row
+        // into a false-positive duplicate against "Toan lop 4, Ket noi tri thuc, Tap 1".
+        var query = libraryDocumentRepository.query()
+                .eq(LibraryDocument::getGrade, grade)
+                .eq(LibraryDocument::getSubjectName, subjectName)
+                .eq(LibraryDocument::getCurriculum, curriculum);
+        query = normalizedVolume == null ? query.isNull(LibraryDocument::getVolume) : query.eq(LibraryDocument::getVolume, normalizedVolume);
+        return query.exists();
+    }
+
+    /**
+     * Attaches (or replaces) the PDF for an existing library document - the second half of the
+     * "import metadata now, upload the file later" flow (see {@link #createMetadataOnly}). If the
+     * row already has a file, the old one is deleted from disk first (same "remove then
+     * re-upload" shape as {@code LessonService}'s image replace / {@code QuestionService}'s audio
+     * replace) - this endpoint doubles as a plain "replace the PDF" action for a row that already
+     * has one, not only for file-less rows from an import.
+     */
+    public LibraryDocumentResponse attachFile(Long id, MultipartFile file) {
+        LibraryDocument doc = libraryDocumentRepository.findById(id);
+        if (doc == null) {
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Library document not found");
+        }
+        if (doc.getFilePath() != null && !doc.getFilePath().isBlank()) {
+            try {
+                Files.deleteIfExists(LIBRARY_DIR.resolve(doc.getFilePath()));
+            } catch (IOException e) {
+                logError("Could not delete old library file " + doc.getFilePath(), e);
+            }
+        }
+
+        String filename = saveFileOrThrow(file);
+        Long adminId = CurrentUser.get().userId();
+        doc.setFilePath(filename);
+        doc.setFileSize(file.getSize());
+        doc.setUpdatedAt(LocalDateTime.now());
+        doc.setUpdatedBy("admin:" + adminId);
+        doc = libraryDocumentRepository.save(doc);
+
+        logInfo("Library document file attached: id={}, adminId={}", doc.getId(), adminId);
+        return LibraryDocumentResponse.from(doc);
+    }
+
+    /** Throws {@link QuizErrorCode#LIBRARY_INVALID_TAXONOMY} if grade is outside 1-12 or curriculum is not a known name from the Admin-managed Curriculum list. */
+    private void validateTaxonomy(int grade, String curriculum) {
+        if (!isValidTaxonomy(grade, curriculum)) {
             throw new BusinessException(QuizErrorCode.LIBRARY_INVALID_TAXONOMY);
         }
+    }
+
+    /**
+     * Same check as {@link #validateTaxonomy} but returns a boolean instead of throwing - used by
+     * {@code LibraryImportService} so a single bad row (invalid grade/curriculum) can be reported
+     * as a per-row error and skipped, matching every other bulk-import feature's "never throw for
+     * a row-level problem" convention (see {@code QuestionImportService}'s class javadoc).
+     */
+    boolean isValidTaxonomy(int grade, String curriculum) {
+        return grade >= MIN_GRADE && grade <= MAX_GRADE
+                && curriculumRepository.query().eq(Curriculum::getName, curriculum).exists();
+    }
+
+    /** Validates {@code file} against {@link #ALLOWED_PDF_TYPES}/{@link #MAX_PDF_SIZE_BYTES} and writes it to {@link #LIBRARY_DIR} under a fresh random filename, returning that filename (never the original one - same convention as every other upload in this codebase). */
+    private String saveFileOrThrow(MultipartFile file) {
         String extension = ALLOWED_PDF_TYPES.get(file.getContentType());
         if (extension == null) {
             throw new BusinessException(QuizErrorCode.LIBRARY_PDF_INVALID_TYPE);
@@ -124,7 +227,11 @@ public class LibraryService extends IBase {
             logError("Could not save library document to " + target, e);
             throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
         }
+        return filename;
+    }
 
+    /** Builds and saves one {@link LibraryDocument} row - shared by {@link #upload} (real file) and {@link #createMetadataOnly} (import, {@code filePath=""}/{@code fileSize=0}). */
+    private LibraryDocument buildAndSaveRow(int grade, String subjectName, String curriculum, String volume, String title, String filePath, long fileSize) {
         Long adminId = CurrentUser.get().userId();
         LocalDateTime now = LocalDateTime.now();
         String actor = "admin:" + adminId;
@@ -138,17 +245,13 @@ public class LibraryService extends IBase {
         doc.setCurriculum(curriculum);
         doc.setVolume(volume == null || volume.isBlank() ? null : volume.trim());
         doc.setTitle(resolvedTitle);
-        doc.setFilePath(filename);
-        doc.setFileSize(file.getSize());
+        doc.setFilePath(filePath);
+        doc.setFileSize(fileSize);
         doc.setCreatedAt(now);
         doc.setUpdatedAt(now);
         doc.setCreatedBy(actor);
         doc.setUpdatedBy(actor);
-        doc = libraryDocumentRepository.save(doc);
-
-        logInfo("Library document uploaded: id={}, grade={}, subjectName={}, curriculum={}, adminId={}",
-                doc.getId(), grade, subjectName, curriculum, adminId);
-        return LibraryDocumentResponse.from(doc);
+        return libraryDocumentRepository.save(doc);
     }
 
     /** e.g. "Toán 4 - Tập 1 - Kết nối tri thức" (volume omitted if blank) - only used when the Admin leaves the title field blank on upload. */
