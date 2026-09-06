@@ -25,14 +25,18 @@ import vn.org.thn.service.base.response.ApiResponse;
 import java.util.List;
 
 /**
- * Parent-facing weekly timetable ("thoi khoa bieu") CRUD for one Classroom - part 1 of the
- * feature added 2026-09-05, per the user's explicit request "tao chuc nang thoi khoa bieu trong 1
- * tuan cua con". See {@code TimetableEntry}'s javadoc for the full design (single persistent
- * template, no time-of-day, Subject-level only as of the 2026-09-06 revision, no separate
- * volume/tap field). Behind {@link
- * JwtAuthFilter} under {@code /api/parent/*}.
+ * Parent-facing weekly timetable ("thoi khoa bieu") CRUD for one Student - part 1 of the feature
+ * added 2026-09-05, per the user's explicit request "tao chuc nang thoi khoa bieu trong 1 tuan
+ * cua con". See {@code TimetableEntry}'s javadoc for the full design (single persistent template,
+ * no time-of-day, Subject-level only as of revision (a), per-Student as of revision (b), no
+ * separate volume/tap field). Behind {@link JwtAuthFilter} under {@code /api/parent/*}.
+ * <p>
+ * <b>Revision 2026-09-06 (b):</b> routes moved from {@code /classrooms/{classroomId}/timetable}
+ * to {@code /students/{studentId}/timetable} - see {@code TimetableEntry}'s javadoc for why
+ * (2 siblings sharing 1 Classroom can now have different schedules), mirroring the already
+ * Student-scoped {@code /students/{studentId}/preparation/tomorrow} route below.
  */
-@Tag(name = "Parent - Timetable", description = "Weekly timetable (thoi khoa bieu) for one Classroom")
+@Tag(name = "Parent - Timetable", description = "Weekly timetable (thoi khoa bieu) for one Student")
 @RestController
 @RequestMapping("/api/parent")
 public class TimetableApi extends BaseCtl {
@@ -44,32 +48,32 @@ public class TimetableApi extends BaseCtl {
     private LessonPreparationService lessonPreparationService;
 
     @Operation(
-            summary = "The whole week's timetable for this classroom",
-            description = "classroomId must belong to the current parent. Flat list mixing every dayOfWeek (1=Monday..7=Sunday), already sorted by dayOfWeek then orderIndex - group by dayOfWeek on the client."
+            summary = "The whole week's timetable for this student",
+            description = "studentId must belong to the current parent. Flat list mixing every dayOfWeek (1=Monday..7=Sunday), already sorted by dayOfWeek then orderIndex - group by dayOfWeek on the client."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Every entry across the whole week")
     })
-    @GetMapping("/classrooms/{classroomId}/timetable")
-    public ResponseEntity<ApiResponse<List<TimetableEntryResponse>>> getWeek(@PathVariable Long classroomId) {
-        return ok(timetableService.getWeek(classroomId));
+    @GetMapping("/students/{studentId}/timetable")
+    public ResponseEntity<ApiResponse<List<TimetableEntryResponse>>> getWeek(@PathVariable Long studentId) {
+        return ok(timetableService.getWeek(studentId));
     }
 
     @Operation(
             summary = "Replace one day's subject list",
-            description = "REPLACES every entry for this classroom+dayOfWeek in one call - subjectIds order becomes orderIndex (0-based). Pass an empty list to clear the day."
+            description = "REPLACES every entry for this student+dayOfWeek in one call - subjectIds order becomes orderIndex (0-based). Pass an empty list to clear the day."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Day updated - returns the whole week again"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "dayOfWeek not in 1..7, or a subjectId does not belong to this classroom - COMMON_002")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "dayOfWeek not in 1..7, or a subjectId does not belong to this student's classroom - COMMON_002")
     })
-    @PutMapping("/classrooms/{classroomId}/timetable/{dayOfWeek}")
+    @PutMapping("/students/{studentId}/timetable/{dayOfWeek}")
     public ResponseEntity<ApiResponse<List<TimetableEntryResponse>>> setDay(
-            @PathVariable Long classroomId,
+            @PathVariable Long studentId,
             @Parameter(description = "1=Monday..7=Sunday") @PathVariable int dayOfWeek,
             @Valid @RequestBody TimetableDayRequest request) {
-        timetableService.setDay(classroomId, dayOfWeek, request);
-        return ok(timetableService.getWeek(classroomId));
+        timetableService.setDay(studentId, dayOfWeek, request);
+        return ok(timetableService.getWeek(studentId));
     }
 
     @Operation(

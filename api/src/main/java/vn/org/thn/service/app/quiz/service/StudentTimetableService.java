@@ -3,12 +3,8 @@ package vn.org.thn.service.app.quiz.service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import vn.org.thn.service.app.quiz.dto.TimetableEntryResponse;
-import vn.org.thn.service.app.quiz.entity.Student;
-import vn.org.thn.service.app.quiz.repository.StudentRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.base.IBase;
-import vn.org.thn.service.base.exception.BusinessException;
-import vn.org.thn.service.base.exception.CommonErrorCode;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -19,20 +15,18 @@ import java.util.List;
  * SAME {@link TimetableEntry} rows the Parent edits via {@link TimetableService}, filtered down to
  * the single day the Student asks about.
  * <p>
- * A Student always belongs to exactly 1 {@link vn.org.thn.service.app.quiz.entity.Classroom} (see
- * {@link Student#getClassroomId()}), so unlike the Parent-facing API there is no classroomId
- * parameter anywhere here - it is resolved from the Student's own row every call, the same "read
- * {@link CurrentUser#get()} yourself, never trust a caller-supplied id for ownership" shape as
- * every other Student/Parent service in this codebase.
+ * <b>Revision 2026-09-06 (b):</b> {@link TimetableEntry} moved from per-Classroom to per-Student
+ * (see its javadoc) - this class used to look up the current Student's row purely to read its
+ * {@code classroomId} before calling {@code TimetableService#getForClassroomAndDate}; now that
+ * {@link TimetableService#getForStudentAndDate} takes the Student's own id directly, that lookup
+ * (and this class's {@code StudentRepository} dependency) is no longer needed - an authenticated
+ * Student session's {@link CurrentUser#get()} id IS the studentId to query with.
  * <p>
  * Reuses {@link TimetableService#toResponses} rather than re-implementing the TimetableEntry ->
- * Lesson -> Subject name-resolution walk a second time.
+ * Subject name-resolution walk a second time.
  */
 @Service
 public class StudentTimetableService extends IBase {
-
-    @Autowired
-    private StudentRepository studentRepository;
 
     @Autowired
     private TimetableService timetableService;
@@ -55,11 +49,6 @@ public class StudentTimetableService extends IBase {
      */
     private List<TimetableEntryResponse> getForDate(LocalDate date) {
         Long studentId = CurrentUser.get().userId();
-        Student student = studentRepository.findById(studentId);
-        if (student == null) {
-            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Student not found");
-        }
-
-        return timetableService.getForClassroomAndDate(student.getClassroomId(), date);
+        return timetableService.getForStudentAndDate(studentId, date);
     }
 }

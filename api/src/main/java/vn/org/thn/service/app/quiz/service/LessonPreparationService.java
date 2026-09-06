@@ -6,9 +6,7 @@ import org.springframework.transaction.annotation.Transactional;
 import vn.org.thn.service.app.quiz.dto.LessonPreparationStatus;
 import vn.org.thn.service.app.quiz.dto.TimetableEntryResponse;
 import vn.org.thn.service.app.quiz.entity.LessonPreparation;
-import vn.org.thn.service.app.quiz.entity.Student;
 import vn.org.thn.service.app.quiz.repository.LessonPreparationRepository;
-import vn.org.thn.service.app.quiz.repository.StudentRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.base.IBase;
 import vn.org.thn.service.base.exception.BusinessException;
@@ -29,15 +27,23 @@ import java.util.stream.Collectors;
  * LessonPreparation} rows this class writes (item 10: "phu huynh dua vao ket qua cua 9 de biet
  * con da chuan bi bai cho ngay mai hay chua va mon nao chua hoc").
  * <p>
- * <b>Revision 2026-09-06:</b> tracks {@code subjectId} now, not {@code lessonId} - see {@link
+ * <b>Revision 2026-09-06 (a):</b> tracks {@code subjectId} now, not {@code lessonId} - see {@link
  * LessonPreparation}'s javadoc for why (the timetable itself became Subject-level only).
+ * <p>
+ * <b>Revision 2026-09-06 (b):</b> {@code TimetableEntry} moved from per-Classroom to per-Student
+ * (see its javadoc) - every method here used to first load the {@code Student} row purely to read
+ * its {@code classroomId} before calling {@code TimetableService#getForClassroomAndDate}; now
+ * that {@link TimetableService#getForStudentAndDate} takes the Student's own id directly, that
+ * extra lookup is gone throughout this class (this table was already keyed by {@code studentId}
+ * directly, so its own schema needed no change - only the calls into {@code TimetableService}
+ * did).
  * <p>
  * Always resolves "tomorrow" as {@code LocalDate.now().plusDays(1)} at call time - deliberately
  * NOT a caller-supplied date parameter anywhere in this class's public API, since both items 9
  * and 10 are explicitly about "ngay mai" (tomorrow) and nothing else; a generic by-date API was
  * considered and rejected as unneeded scope for this feature.
  * <p>
- * Reuses {@link TimetableService#getForClassroomAndDate} for the "what is scheduled" half of the
+ * Reuses {@link TimetableService#getForStudentAndDate} for the "what is scheduled" half of the
  * status list (same method backing {@code StudentTimetableService}'s own today/tomorrow view),
  * and merges in whether a {@link LessonPreparation} row exists for each subject.
  */
@@ -46,9 +52,6 @@ public class LessonPreparationService extends IBase {
 
     @Autowired
     private LessonPreparationRepository lessonPreparationRepository;
-
-    @Autowired
-    private StudentRepository studentRepository;
 
     @Autowired
     private TimetableService timetableService;
@@ -61,25 +64,23 @@ public class LessonPreparationService extends IBase {
     /** Tomorrow's timetable for the current Student, each subject flagged whether already marked prepared. */
     public List<LessonPreparationStatus> getMyTomorrowStatus() {
         Long studentId = CurrentUser.get().userId();
-        Student student = getStudentOrThrow(studentId);
-        return buildStatus(student.getClassroomId(), studentId, tomorrow());
+        return buildStatus(studentId, tomorrow());
     }
 
     /**
      * Marks {@code subjectId} as prepared for tomorrow - idempotent (marking an already-prepared
      * subject again is a no-op, not an error, so the frontend checkbox never needs to know
      * whether it is already checked before calling this). Rejects a {@code subjectId} that is not
-     * actually on tomorrow's timetable for this Student's classroom (COMMON_002) - otherwise a
-     * Student could mark an arbitrary subjectId "prepared", and item 10's Parent view would show a
-     * phantom entry with no corresponding timetable slot.
+     * actually on tomorrow's timetable for this Student (COMMON_002) - otherwise a Student could
+     * mark an arbitrary subjectId "prepared", and item 10's Parent view would show a phantom
+     * entry with no corresponding timetable slot.
      */
     @Transactional
     public void markPrepared(Long subjectId) {
         Long studentId = CurrentUser.get().userId();
-        Student student = getStudentOrThrow(studentId);
         LocalDate date = tomorrow();
 
-        boolean scheduledTomorrow = timetableService.getForClassroomAndDate(student.getClassroomId(), date)
+        boolean scheduledTomorrow = timetableService.getForStudentAndDate(studentId, date)
                 .stream().anyMatch(entry -> entry.getSubjectId().equals(subjectId));
         if (!scheduledTomorrow) {
             throw new BusinessException(CommonErrorCode.INVALID_PARAMETER, "subjectId is not in tomorrow's timetable for this student");
@@ -123,12 +124,12 @@ public class LessonPreparationService extends IBase {
     /** Same shape as {@link #getMyTomorrowStatus} but for one of the current Parent's students - read-only, the Parent can never mark/unmark on the Student's behalf. */
     public List<LessonPreparationStatus> getStudentTomorrowStatus(Long studentId) {
         Long parentId = CurrentUser.get().userId();
-        Student student = studentService.getOwnedOrThrow(studentId, parentId);
-        return buildStatus(student.getClassroomId(), studentId, tomorrow());
+        studentService.getOwnedOrThrow(studentId, parentId);
+        return buildStatus(studentId, tomorrow());
     }
 
-    private List<LessonPreparationStatus> buildStatus(Long classroomId, Long studentId, LocalDate date) {
-        List<TimetableEntryResponse> entries = timetableService.getForClassroomAndDate(classroomId, date);
+    private List<LessonPreparationStatus> buildStatus(Long studentId, LocalDate date) {
+        List<TimetableEntryResponse> entries = timetableService.getForStudentAndDate(studentId, date);
         Set<Long> preparedSubjectIds = lessonPreparationRepository.query()
                 .eq(LessonPreparation::getStudentId, studentId)
                 .eq(LessonPreparation::getTargetDate, date)
@@ -144,13 +145,5 @@ public class LessonPreparationService extends IBase {
 
     private LocalDate tomorrow() {
         return LocalDate.now().plusDays(1);
-    }
-
-    private Student getStudentOrThrow(Long studentId) {
-        Student student = studentRepository.findById(studentId);
-        if (student == null) {
-            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Student not found");
-        }
-        return student;
     }
 }

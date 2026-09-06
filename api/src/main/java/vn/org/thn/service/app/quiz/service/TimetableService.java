@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.org.thn.service.app.quiz.dto.TimetableDayRequest;
 import vn.org.thn.service.app.quiz.dto.TimetableEntryResponse;
+import vn.org.thn.service.app.quiz.entity.Student;
 import vn.org.thn.service.app.quiz.entity.Subject;
 import vn.org.thn.service.app.quiz.entity.TimetableEntry;
 import vn.org.thn.service.app.quiz.repository.SubjectRepository;
@@ -20,13 +21,13 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Weekly timetable ("thoi khoa bieu") CRUD for the currently logged-in Parent's Classroom (part 1
+ * Weekly timetable ("thoi khoa bieu") CRUD for the currently logged-in Parent's Student (part 1
  * of the feature added 2026-09-05, per the user's explicit request "tao chuc nang thoi khoa bieu
  * trong 1 tuan cua con"). Later parts (Student "today/tomorrow" view, Parent weekly view, the
  * lesson-preparation checkbox) all read {@link #getWeek} rather than duplicating this class's own
  * lookup logic. See {@link TimetableEntry}'s javadoc for the full design rationale (single
- * persistent template, no time-of-day, Subject-level only as of the 2026-09-06 revision, no
- * separate volume/tap field).
+ * persistent template, no time-of-day, Subject-level only as of revision (a), per-Student as of
+ * revision (b), no separate volume/tap field).
  * <p>
  * Same "read {@link CurrentUser#get()} itself, ownership enforced here rather than trusted from
  * the caller" shape as every other Parent-facing service in this codebase.
@@ -41,15 +42,15 @@ public class TimetableService extends IBase {
     private SubjectRepository subjectRepository;
 
     @Autowired
-    private ClassroomService classroomService;
+    private StudentService studentService;
 
-    /** The whole week for {@code classroomId}, sorted by dayOfWeek then orderIndex - a flat list, group by dayOfWeek on the client (same "flat list, group on the client" shape as {@code StudentTestSummaryResponse}). */
-    public List<TimetableEntryResponse> getWeek(Long classroomId) {
+    /** The whole week for {@code studentId}, sorted by dayOfWeek then orderIndex - a flat list, group by dayOfWeek on the client (same "flat list, group on the client" shape as {@code StudentTestSummaryResponse}). */
+    public List<TimetableEntryResponse> getWeek(Long studentId) {
         Long parentId = CurrentUser.get().userId();
-        classroomService.getOwnedOrThrow(classroomId, parentId);
+        studentService.getOwnedOrThrow(studentId, parentId);
 
         List<TimetableEntry> entries = timetableEntryRepository.query()
-                .eq(TimetableEntry::getClassroomId, classroomId).list();
+                .eq(TimetableEntry::getStudentId, studentId).list();
         entries.sort(Comparator.comparing(TimetableEntry::getDayOfWeek)
                 .thenComparing(TimetableEntry::getOrderIndex));
 
@@ -71,20 +72,23 @@ public class TimetableService extends IBase {
     }
 
     /**
-     * The subjects scheduled on {@code date}'s day-of-week for {@code classroomId}, sorted by
+     * The subjects scheduled on {@code date}'s day-of-week for {@code studentId}, sorted by
      * {@code orderIndex} - the single-day counterpart of {@link #getWeek}, added so both {@code
      * StudentTimetableService} (Student's own today/tomorrow) and {@code
      * LessonPreparationService} (Parent's read-only view of ANY owned student, not just the
-     * current caller) can resolve "what does classroom X study on date Y" without each
+     * current caller) can resolve "what does this student study on date Y" without each
      * re-implementing the {@code dayOfWeek} lookup + sort. Package-private, no ownership check
      * here (unlike {@link #getWeek}) - the caller is responsible for verifying it may look at
-     * {@code classroomId} (a Student's own classroom needs no check; a Parent's access is checked
-     * against the STUDENT, not the classroom, in {@code LessonPreparationService}).
+     * {@code studentId} (a Student's own id needs no check; a Parent's access is checked against
+     * the STUDENT beforehand in {@code LessonPreparationService}).
+     * <p>
+     * Renamed from {@code getForClassroomAndDate} in revision (b) of {@link TimetableEntry} - see
+     * its javadoc.
      */
-    List<TimetableEntryResponse> getForClassroomAndDate(Long classroomId, java.time.LocalDate date) {
+    List<TimetableEntryResponse> getForStudentAndDate(Long studentId, java.time.LocalDate date) {
         int dayOfWeek = date.getDayOfWeek().getValue();
         List<TimetableEntry> entries = timetableEntryRepository.query()
-                .eq(TimetableEntry::getClassroomId, classroomId)
+                .eq(TimetableEntry::getStudentId, studentId)
                 .eq(TimetableEntry::getDayOfWeek, dayOfWeek)
                 .list();
         entries.sort(Comparator.comparing(TimetableEntry::getOrderIndex));
@@ -92,7 +96,7 @@ public class TimetableService extends IBase {
     }
 
     /**
-     * REPLACES every {@link TimetableEntry} for {@code classroomId}+{@code dayOfWeek} with the
+     * REPLACES every {@link TimetableEntry} for {@code studentId}+{@code dayOfWeek} with the
      * subjects in {@code request.getSubjectIds()}, in that order (0-based {@code orderIndex}) -
      * see {@code TimetableDayRequest}'s javadoc for why a full-replace call was chosen over a
      * per-entry add/remove/reorder API (a Parent editing "Monday's schedule" naturally thinks of
@@ -101,12 +105,14 @@ public class TimetableService extends IBase {
      * <p>
      * Every {@code subjectId} is validated BEFORE anything is deleted, so a bad id (unknown, or
      * belonging to another Classroom) leaves the day completely untouched rather than
-     * half-cleared.
+     * half-cleared. The Student's own {@code classroomId} is resolved once here purely to keep
+     * validating that each {@code subjectId} is actually taught in that Student's Classroom
+     * (revision (b) - see {@link TimetableEntry}'s javadoc) - it is NOT stored on the new row.
      */
     @Transactional
-    public void setDay(Long classroomId, int dayOfWeek, TimetableDayRequest request) {
+    public void setDay(Long studentId, int dayOfWeek, TimetableDayRequest request) {
         Long parentId = CurrentUser.get().userId();
-        classroomService.getOwnedOrThrow(classroomId, parentId);
+        Student student = studentService.getOwnedOrThrow(studentId, parentId);
         if (dayOfWeek < 1 || dayOfWeek > 7) {
             throw new BusinessException(CommonErrorCode.INVALID_PARAMETER,
                     "dayOfWeek must be between 1 (Monday) and 7 (Sunday)");
@@ -114,11 +120,11 @@ public class TimetableService extends IBase {
 
         List<Subject> subjects = new ArrayList<>();
         for (Long subjectId : request.getSubjectIds()) {
-            subjects.add(getSubjectInClassroomOrThrow(subjectId, classroomId));
+            subjects.add(getSubjectInClassroomOrThrow(subjectId, student.getClassroomId()));
         }
 
         timetableEntryRepository.delete()
-                .eq(TimetableEntry::getClassroomId, classroomId)
+                .eq(TimetableEntry::getStudentId, studentId)
                 .eq(TimetableEntry::getDayOfWeek, dayOfWeek)
                 .execute();
 
@@ -126,7 +132,7 @@ public class TimetableService extends IBase {
         int orderIndex = 0;
         for (Subject subject : subjects) {
             TimetableEntry entry = new TimetableEntry();
-            entry.setClassroomId(classroomId);
+            entry.setStudentId(studentId);
             entry.setDayOfWeek(dayOfWeek);
             entry.setSubjectId(subject.getId());
             entry.setOrderIndex(orderIndex++);
@@ -137,16 +143,17 @@ public class TimetableService extends IBase {
             timetableEntryRepository.save(entry);
         }
 
-        logInfo("Timetable day set: classroomId={}, dayOfWeek={}, subjectCount={}, parentId={}",
-                classroomId, dayOfWeek, subjects.size(), parentId);
+        logInfo("Timetable day set: studentId={}, dayOfWeek={}, subjectCount={}, parentId={}",
+                studentId, dayOfWeek, subjects.size(), parentId);
     }
 
     /**
      * Loads {@code subjectId}, throwing if it doesn't exist or does not belong to {@code
      * classroomId} - deliberately does NOT reuse {@code SubjectService}'s own ownership check
      * (that only checks "belongs to the current Parent", i.e. ANY of their classrooms) because a
-     * Subject from the Parent's OTHER Classroom must still be rejected here (a Classroom's
-     * timetable can only reference Subjects taught in that same Classroom).
+     * Subject from the Student's OTHER... (a Student has exactly one Classroom, but the Parent's
+     * OTHER Classroom's Subjects) must still be rejected here (a Student's timetable can only
+     * reference Subjects taught in that Student's own Classroom).
      */
     private Subject getSubjectInClassroomOrThrow(Long subjectId, Long classroomId) {
         Subject subject = subjectRepository.findById(subjectId);
@@ -155,7 +162,7 @@ public class TimetableService extends IBase {
         }
         if (!subject.getClassroomId().equals(classroomId)) {
             throw new BusinessException(CommonErrorCode.INVALID_PARAMETER,
-                    "subjectId " + subjectId + " does not belong to this classroom");
+                    "subjectId " + subjectId + " does not belong to this student's classroom");
         }
         return subject;
     }
