@@ -22,6 +22,13 @@ import java.util.List;
  * (and this class's {@code StudentRepository} dependency) is no longer needed - an authenticated
  * Student session's {@link CurrentUser#get()} id IS the studentId to query with.
  * <p>
+ * <b>Revision 2026-09-06 (c):</b> added {@link #getWeek} and {@link #addSubject} - the user's
+ * explicit request "hoc sinh cho phep hoc sinh tao thoi khoa bieu khong cho xoa, update - viec xoa
+ * hoac update thi phu huynh lam, sau khi hoc sinh them thoi khoa bieu thi phu huynh se thay" (a
+ * Student may ADD a Subject to any day of their own week, but never remove/reorder/replace - that
+ * stays exclusively the Parent's job via {@code TimetableApi#setDay}; whatever the Student adds is
+ * simply visible the next time the Parent loads the week, no separate approval/notify step).
+ * <p>
  * Reuses {@link TimetableService#toResponses} rather than re-implementing the TimetableEntry ->
  * Subject name-resolution walk a second time.
  */
@@ -50,5 +57,18 @@ public class StudentTimetableService extends IBase {
     private List<TimetableEntryResponse> getForDate(LocalDate date) {
         Long studentId = CurrentUser.get().userId();
         return timetableService.getForStudentAndDate(studentId, date);
+    }
+
+    /** The whole week for the current Student, sorted by dayOfWeek then orderIndex - same flat-list shape as the Parent-facing {@code TimetableService#getWeek}, for the new "Student creates their own timetable" page (2026-09-06). */
+    public List<TimetableEntryResponse> getWeek() {
+        Long studentId = CurrentUser.get().userId();
+        return timetableService.getOwnWeek(studentId);
+    }
+
+    /** Appends {@code subjectId} to {@code dayOfWeek}'s list for the current Student's own timetable - see {@link TimetableService#addOwnEntry}'s javadoc for the full ADD-only rule. Returns the updated whole week (same "write endpoint returns the fresh whole collection" convention as every other timetable/preparation write in this codebase). */
+    public List<TimetableEntryResponse> addSubject(int dayOfWeek, Long subjectId) {
+        Long studentId = CurrentUser.get().userId();
+        timetableService.addOwnEntry(studentId, dayOfWeek, subjectId);
+        return getWeek();
     }
 }

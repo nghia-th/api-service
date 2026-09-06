@@ -17,6 +17,15 @@ import lombok.Data;
  * StudentQuestionResponse}), this DOES include {@code correctChoiceContent}/{@code correct}, same
  * as the Parent's report, because there is no more cheating risk once the attempt is locked and
  * graded.
+ * <p>
+ * {@code hasAudio}/{@code hasVideo} (2026-09-06, "phan xem dap an cua hoc sinh anh muon hien thi
+ * them phan audio, video ma cau hoi co") - same "flag here / bytes via their own endpoint" split
+ * as {@link StudentQuestionResponse#isHasAudio()}/{@code isHasVideo()}, reusing the SAME {@code
+ * GET /api/student/questions/{id}/audio}/{@code .../video} endpoints - those already allow access
+ * to any Question on any Test ever assigned to this Student regardless of attempt status (see
+ * {@code StudentAttemptService#getQuestionAudio}/{@code #getQuestionVideo}'s own access check), so
+ * no backend endpoint change was needed to make review-mode playback work - only exposing the two
+ * flags here.
  */
 @Data
 @AllArgsConstructor
@@ -33,4 +42,6 @@ public class StudentAttemptAnswerDetail {
     private Boolean parentMarkedCorrect;
     private String answerText;
     private String answerMode;
+    private boolean hasAudio;
+    private boolean hasVideo;
 }

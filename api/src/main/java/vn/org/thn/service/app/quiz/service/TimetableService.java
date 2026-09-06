@@ -44,11 +44,25 @@ public class TimetableService extends IBase {
     @Autowired
     private StudentService studentService;
 
-    /** The whole week for {@code studentId}, sorted by dayOfWeek then orderIndex - a flat list, group by dayOfWeek on the client (same "flat list, group on the client" shape as {@code StudentTestSummaryResponse}). */
+    /** The whole week for {@code studentId}, sorted by dayOfWeek then orderIndex - a flat list, group by dayOfWeek on the client (same "flat list, group on the client" shape as {@code StudentTestSummaryResponse}). Parent-facing - ownership checked against the current Parent. */
     public List<TimetableEntryResponse> getWeek(Long studentId) {
         Long parentId = CurrentUser.get().userId();
         studentService.getOwnedOrThrow(studentId, parentId);
+        return queryWeek(studentId);
+    }
 
+    /**
+     * Same query as {@link #getWeek} but for the Student-facing self-service view (2026-09-06,
+     * "hoc sinh tao thoi khoa bieu") - {@code getWeek}'s ownership check does not apply here (a
+     * Student is not "owned by" a Parent the way {@code StudentService#getOwnedOrThrow} checks;
+     * they simply read their own single row). Package-private - only safe to call with {@code
+     * studentId == CurrentUser.get().userId()}, see {@code StudentTimetableService#getWeek}.
+     */
+    List<TimetableEntryResponse> getOwnWeek(Long studentId) {
+        return queryWeek(studentId);
+    }
+
+    private List<TimetableEntryResponse> queryWeek(Long studentId) {
         List<TimetableEntry> entries = timetableEntryRepository.query()
                 .eq(TimetableEntry::getStudentId, studentId).list();
         entries.sort(Comparator.comparing(TimetableEntry::getDayOfWeek)
@@ -145,6 +159,61 @@ public class TimetableService extends IBase {
 
         logInfo("Timetable day set: studentId={}, dayOfWeek={}, subjectCount={}, parentId={}",
                 studentId, dayOfWeek, subjects.size(), parentId);
+    }
+
+    /**
+     * Student self-service ADD (2026-09-06, "hoc sinh cho phep hoc sinh tao thoi khoa bieu khong
+     * cho xoa, update - viec xoa hoac update thi phu huynh lam") - appends {@code subjectId} to
+     * the END of {@code dayOfWeek}'s list for the Student's OWN timetable. Deliberately the ONLY
+     * write operation a Student has on {@link TimetableEntry} - there is no Student-facing
+     * remove/reorder/replace anywhere; {@link #setDay} (full replace, which can also shrink or
+     * reorder a day) stays exclusively Parent-facing. Once added, the Parent sees it immediately
+     * the next time they load the week (no separate "notify parent" step needed - same "just read
+     * the same row" reasoning as {@code LessonPreparationService}'s own "gui cho phu huynh").
+     * <p>
+     * Idempotent - adding a {@code subjectId} already present for that day is a silent no-op
+     * (same "presence = done, repeat is a no-op" convention as {@code
+     * LessonPreparationService#markPrepared}), so the Student-facing UI never needs to check
+     * first. {@code subjectId} must belong to the Student's own Classroom (reuses {@link
+     * #getSubjectInClassroomOrThrow}, same validation {@link #setDay} does for the Parent).
+     */
+    @Transactional
+    public void addOwnEntry(Long studentId, int dayOfWeek, Long subjectId) {
+        if (dayOfWeek < 1 || dayOfWeek > 7) {
+            throw new BusinessException(CommonErrorCode.INVALID_PARAMETER,
+                    "dayOfWeek must be between 1 (Monday) and 7 (Sunday)");
+        }
+        Student student = studentService.getSelfOrThrow(studentId);
+        getSubjectInClassroomOrThrow(subjectId, student.getClassroomId());
+
+        boolean alreadyPresent = timetableEntryRepository.query()
+                .eq(TimetableEntry::getStudentId, studentId)
+                .eq(TimetableEntry::getDayOfWeek, dayOfWeek)
+                .eq(TimetableEntry::getSubjectId, subjectId)
+                .exists();
+        if (alreadyPresent) {
+            return;
+        }
+
+        List<TimetableEntry> dayEntries = timetableEntryRepository.query()
+                .eq(TimetableEntry::getStudentId, studentId)
+                .eq(TimetableEntry::getDayOfWeek, dayOfWeek)
+                .list();
+        int nextOrderIndex = dayEntries.stream().mapToInt(TimetableEntry::getOrderIndex).max().orElse(-1) + 1;
+
+        LocalDateTime now = LocalDateTime.now();
+        TimetableEntry entry = new TimetableEntry();
+        entry.setStudentId(studentId);
+        entry.setDayOfWeek(dayOfWeek);
+        entry.setSubjectId(subjectId);
+        entry.setOrderIndex(nextOrderIndex);
+        entry.setCreatedAt(now);
+        entry.setUpdatedAt(now);
+        entry.setCreatedBy("student:" + studentId);
+        entry.setUpdatedBy("student:" + studentId);
+        timetableEntryRepository.save(entry);
+
+        logInfo("Timetable entry added by student: studentId={}, dayOfWeek={}, subjectId={}", studentId, dayOfWeek, subjectId);
     }
 
     /**

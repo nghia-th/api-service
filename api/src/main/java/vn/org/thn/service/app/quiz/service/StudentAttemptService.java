@@ -209,7 +209,9 @@ public class StudentAttemptService extends IBase {
                     hasSpeakingAnswer,
                     parentMarkedCorrect,
                     answerText,
-                    answerMode));
+                    answerMode,
+                    question.getAudioPath() != null,
+                    question.getVideoPath() != null));
 
             int[] stat = tagStats.computeIfAbsent(tag, key -> new int[2]);
             stat[1]++;

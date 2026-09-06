@@ -137,6 +137,23 @@ public class StudentService extends IBase {
         return student;
     }
 
+    /**
+     * Loads the Student with id {@code id}, throwing if it doesn't exist - deliberately NO
+     * ownership check against a Parent (unlike {@link #getOwnedOrThrow}). Only safe to call from a
+     * Student-facing self-service flow where {@code id} is ALWAYS {@code CurrentUser.get().userId()}
+     * itself, never a caller-supplied id (2026-09-06, "hoc sinh tao thoi khoa bieu" - Student
+     * self-service ADD on their own {@code TimetableEntry}, see {@code
+     * TimetableService#addOwnEntry}) - a Student has no "owned by" relationship to check the way a
+     * Parent does, they simply access their own single row.
+     */
+    Student getSelfOrThrow(Long id) {
+        Student student = studentRepository.findById(id);
+        if (student == null) {
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Student not found");
+        }
+        return student;
+    }
+
     /** Throws {@link QuizErrorCode#USERNAME_TAKEN} if {@code username} is already used by a student other than {@code excludeStudentId}. Pass null for {@code excludeStudentId} on create. */
     private void ensureUsernameAvailable(String username, Long excludeStudentId) {
         // .ne() is a no-op when the value is null (see BaseConditionBuilder), so this single
