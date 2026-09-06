@@ -41,3 +41,6 @@ out/
 /uploads/
 /data
 /html
+### Externalized secrets (see application.yaml `spring.config.import`) ###
+/config/secrets.yaml
+!/config/secrets.yaml.example

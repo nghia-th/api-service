@@ -11,6 +11,7 @@ import vn.org.thn.service.app.quiz.entity.LessonPreparation;
 import vn.org.thn.service.app.quiz.entity.LessonReport;
 import vn.org.thn.service.app.quiz.entity.Question;
 import vn.org.thn.service.app.quiz.entity.SubjectLibraryLink;
+import vn.org.thn.service.app.quiz.entity.Test;
 import vn.org.thn.service.app.quiz.entity.TestQuestion;
 import vn.org.thn.service.app.quiz.entity.TimetableEntry;
 import vn.org.thn.service.app.quiz.repository.AttemptAnswerRepository;
@@ -227,29 +228,39 @@ public class CascadeDeleteService extends IBase {
     }
 
     /**
-     * Deletes every {@link TimetableEntry} and {@link LessonPreparation} row belonging to {@code
-     * studentId} (2026-09-06, revision (b) of {@code TimetableEntry} - see its javadoc). Added
-     * specifically because {@code timetable_entry} just gained a {@code student_id NOT NULL
-     * REFERENCES student(id)} foreign key (V7 migration) - without this cleanup, {@code
-     * StudentService#delete} would start throwing a live foreign-key-constraint-violation error
-     * the moment a Student with any timetable entry was deleted. {@code lesson_preparation} was
-     * ALREADY student-scoped before this revision and had the exact same pre-existing gap
-     * (discovered during this same investigation - it was never cleaned up on Student delete
-     * either), so it is fixed here too, in the same pass, for the same reason.
+     * Deletes EVERY piece of data belonging to {@code studentId} across the whole app - {@link
+     * TimetableEntry}, {@link LessonPreparation}, {@link LessonReport} rows, and every {@link
+     * Test} assigned to this Student (which, via {@link
+     * #deleteTestsCascade}, also removes its Attempts/AttemptAnswers and any recorded
+     * speaking-answer audio files) - called right before the Student row itself is deleted, see
+     * {@code StudentService#delete}.
      * <p>
-     * Deliberately does NOT also cover {@code test}/{@code attempt}/{@code lesson_report}, which
-     * this same investigation found ALSO have a live {@code REFERENCES student(id)} foreign key
-     * with zero cascade-on-student-delete cleanup today (a pre-existing bug, not introduced by
-     * this change) - deleting Test/Attempt history is a materially bigger, more destructive
-     * decision (permanent loss of grading history) than this method's two tables, and was not
-     * part of what the user asked for in this request; flagged for the user rather than silently
-     * folded in here.
+     * <b>Revision 2026-09-06 (e):</b> originally (revision (b) of {@code TimetableEntry}) this
+     * method only cleaned up {@code timetable_entry}/{@code lesson_preparation} - added then
+     * because {@code timetable_entry} had just gained a {@code student_id NOT NULL REFERENCES
+     * student(id)} foreign key (V7 migration), and {@code lesson_preparation} was found to have
+     * the exact same pre-existing gap. At the time, {@code test}/{@code attempt}/{@code
+     * lesson_report} were flagged as having the SAME kind of gap (a live {@code REFERENCES
+     * student(id)} foreign key with zero cascade-on-student-delete cleanup) but deliberately left
+     * unfixed, since permanently losing a Student's grading/test history is a materially bigger
+     * decision than the other two tables and needed its own explicit confirmation first. Per the
+     * user's explicit choice now ("xoá học sinh ... nếu đồng ý sẽ xoá hết" - delete a Student with
+     * a confirmation popup warning ALL of that Student's data will be deleted, and go ahead and
+     * delete everything once confirmed), this method now also covers those three - the popup
+     * itself lives in the frontend (see {@code BlocParentStudents.ts}), this method is simply the
+     * "delete everything" implementation it calls into via {@code StudentService#delete}.
      */
     @Transactional
-    public void deleteStudentTimetableDataCascade(Long studentId) {
+    public void deleteStudentDataCascade(Long studentId) {
+        List<Long> testIds = testRepository.query().eq(Test::getStudentId, studentId).list()
+                .stream().map(Test::getId).toList();
+        deleteTestsCascade(testIds);
+
+        lessonReportRepository.delete().eq(LessonReport::getStudentId, studentId).execute();
         timetableEntryRepository.delete().eq(TimetableEntry::getStudentId, studentId).execute();
         lessonPreparationRepository.delete().eq(LessonPreparation::getStudentId, studentId).execute();
-        logInfo("Cascade-deleted timetable/lesson-preparation data for studentId={}", studentId);
+        logInfo("Cascade-deleted all data for studentId={}: {} test(s), plus timetable/lesson-preparation/lesson-report rows",
+                studentId, testIds.size());
     }
 
     /** Best-effort delete - a missing/already-gone file is not an error worth failing the caller's request over, same reasoning as every other {@code deleteXxxFileQuietly} in this codebase. */

@@ -1,9 +1,17 @@
 spring:
   application:
     name: quiz-service
+  # Externalized config (secrets in particular) - see config/secrets.yaml.example for the
+  # expected structure. "optional:" so the app still boots (against the default SQLITE db,
+  # which needs no credentials) when a dev hasn't created config/secrets.yaml yet. The file
+  # is gitignored - never commit real credentials here, only in that untracked file.
+  config:
+    import: "optional:file:./config/secrets.yaml"
   datasource:
-    username: postgres
-    password: Chuyenviet@1234
+    # username/password moved to config/secrets.yaml (real Postgres/MySQL/etc. credentials -
+    # not needed at all for the default SQLITE engine). See spring.config.import above.
+    username: ${DATASOURCE_USERNAME:}
+    password: ${DATASOURCE_PASSWORD:}
   servlet:
     multipart:
       # Nguong Spring TU CHOI truoc khi request toi duoc controller - phai LON HON gioi han nghiep
@@ -58,10 +66,10 @@ lang:
 # - quiz-service-only config, not part of base.
 quiz:
   jwt:
-    # DEV ONLY placeholder (32+ chars, required for HMAC-SHA256) - replace with a real secret
-    # via an env-specific override (env var / profile) before any non-local deployment. Never
-    # commit a real production secret here.
-    secret: "quiz-service-dev-only-jwt-secret-change-me-32bytes-min"
+    # Real secret lives in config/secrets.yaml (gitignored, see spring.config.import above) or
+    # the DATASOURCE_*/JWT_SECRET env vars - this placeholder is only a fallback so the app still
+    # boots for a fresh clone. Never commit a real production secret here.
+    secret: ${JWT_SECRET:quiz-service-dev-only-jwt-secret-change-me-32bytes-min}
     # Access token lifetime - shortened from the old 24h (`expiration-minutes`) now that a
     # refresh token exists to silently renew it (see QuizApiService.ts's 401 handler); a short
     # lifetime shrinks how long a stolen access token stays useful without costing the user
@@ -74,4 +82,3 @@ quiz:
   # always creates a fixed "root"/"root" account instead of reading credentials from here (per
   # the user's explicit request - see that class's javadoc). Change root's password immediately
   # after first login via POST /api/admin/change-password.
-

@@ -103,10 +103,10 @@ public class StudentApi extends BaseCtl {
 
     @Operation(
             summary = "Delete a student",
-            description = "Hard delete in v1 - Test/Attempt entities do not exist yet, so there is no test history to worry about losing. Only the owning Parent can delete their own Student."
+            description = "CASCADES (2026-09-06 revision) - permanently deletes EVERYTHING belonging to this Student: every Test assigned to them (with its Attempts/AttemptAnswers and any recorded speaking-answer audio), every LessonReport (\"bao bai\") row, and their Timetable/lesson-preparation data. No longer blocked by existing test/attempt history. The frontend is expected to show its own confirmation warning before calling this - this endpoint itself does not ask again. Only the owning Parent can delete their own Student. Irreversible."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted successfully - no response body"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted successfully (with every Test/Attempt/LessonReport/Timetable row belonging to this Student) - no response body"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This student does not belong to the current parent - COMMON_004 FORBIDDEN"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No student with this id - COMMON_005 NOT_FOUND")
     })

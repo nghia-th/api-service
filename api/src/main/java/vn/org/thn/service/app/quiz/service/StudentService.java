@@ -26,18 +26,21 @@ import java.util.List;
  * docs/dev/02-quan-ly-ho-so-con.md} acceptance criteria: Parent A must never be able to
  * read/update/delete a Student belonging to Parent B, even when it knows that student's id.
  * <p>
- * {@code DELETE} does a hard delete, with SOME cascade cleanup added 2026-09-06 (see {@link
- * CascadeDeleteService#deleteStudentTimetableDataCascade}): {@code TimetableEntry} and {@code
- * LessonPreparation} rows for this Student are removed first, otherwise the delete below would
- * throw a foreign-key-constraint-violation the moment a Student with a timetable had a real
- * {@code student_id} foreign key added to {@code timetable_entry} (V7 migration). {@code Test}/
- * {@code Attempt}/{@code LessonReport} rows are NOT cleaned up here - this codebase's original
- * v1 note below (deferred because those entities didn't exist yet) is now stale (they do exist,
- * and DO have their own {@code REFERENCES student(id)} foreign keys), so deleting a Student that
- * already has any Test/Attempt/LessonReport row will still throw today - a pre-existing bug,
- * flagged to the user but deliberately NOT fixed as part of this change (unlike the Timetable
- * tables above, it was not made worse by this change, and fixing it means permanently losing a
- * Student's grading history, a materially bigger decision that deserves its own confirmation).
+ * <b>Revision 2026-09-06 (e):</b> {@code DELETE} is a hard delete that now cascades away
+ * EVERYTHING belonging to this Student first - see {@link
+ * CascadeDeleteService#deleteStudentDataCascade} for the full list ({@code TimetableEntry},
+ * {@code LessonPreparation}, {@code LessonReport}, and every {@code Test}/{@code Attempt}/{@code
+ * AttemptAnswer} assigned to them). Earlier revisions only cleaned up Timetable/LessonPreparation
+ * and left Test/Attempt/LessonReport as a known, flagged gap (deleting a Student with any of
+ * those would throw a live foreign-key-constraint-violation) - per the user's explicit choice
+ * now ("xoá học sinh ... anh muốn có popup xác nhận và cảnh báo nếu xoá thì sẽ xoá hết dữ liệu
+ * của học sinh này và nếu đồng ý sẽ xoá hết" - a confirmation popup warning this permanently
+ * deletes ALL of the Student's data, and go ahead and delete everything once confirmed), this
+ * gap is now closed: every Student delete is unconditionally a full, permanent wipe of that
+ * Student's data. The confirmation popup itself is frontend-only (see {@code
+ * BlocParentStudents.ts}/{@code Students.tsx}) - this endpoint does not ask for confirmation
+ * again and does not accept a "keep history" option; by the time this is called, the Parent has
+ * already confirmed.
  */
 @Service
 public class StudentService extends IBase {
@@ -120,9 +123,9 @@ public class StudentService extends IBase {
     public void delete(Long id) {
         Long parentId = CurrentUser.get().userId();
         Student student = getOwnedOrThrow(id, parentId);
-        cascadeDeleteService.deleteStudentTimetableDataCascade(student.getId());
+        cascadeDeleteService.deleteStudentDataCascade(student.getId());
         studentRepository.deleteById(student.getId());
-        logInfo("Student deleted: id={}, parentId={}", student.getId(), parentId);
+        logInfo("Student deleted (cascade - all data): id={}, parentId={}", student.getId(), parentId);
     }
 
     /** Loads the Student with id {@code id}, throwing if it doesn't exist or doesn't belong to {@code parentId}. Package-private (not private) so {@code TestService} (task 5) can reuse it, same pattern as {@code SubjectService#getOwnedOrThrow}. */
