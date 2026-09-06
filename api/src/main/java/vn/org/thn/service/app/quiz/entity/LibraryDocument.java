@@ -11,26 +11,23 @@ import vn.org.thn.service.base.db.mybatis.annotation.Table;
 import vn.org.thn.service.base.entity.BaseEntity;
 
 /**
- * A textbook PDF uploaded by an Admin (2026-09-05, "thu vien sach giao khoa" feature) - organized
- * by {@code grade} (1-12, fixed list, validated in {@code LibraryService#upload}), {@code
- * subjectName} (free text, e.g. "Toan" - independent from any Parent's own {@link Subject} rows,
- * since this is shared curriculum material managed centrally by Admin, not owned by a Parent) and
- * {@code curriculum} (a name from the Admin-managed {@link Curriculum} lookup list - previously
- * a hardcoded 3-value list, changed 2026-09-05 - validated in {@code LibraryService#upload}),
- * plus an optional {@code volume}
- * (e.g. "Tap 1"). Example from the user's own request: "Lop 4 -&gt; Toan tap 1 -&gt; Ket noi tri
- * thuc".
+ * A library entry uploaded by an Admin (2026-09-05, "thu vien sach giao khoa" feature) -
+ * originally always a textbook organized by {@code grade} (1-12), {@code subjectName} and {@code
+ * curriculum} (a name from the Admin-managed {@link Curriculum} lookup list). <b>Revision
+ * 2026-09-06</b> (extending the feature per the user's explicit choice, instead of a separate
+ * "mon hoc" feature): {@code grade}/{@code curriculum} are now BOTH optional - a general course
+ * not tied to any grade/curriculum (the user's own example: "Lap trinh Python") is represented by
+ * leaving both {@code null}. {@code subjectName} stays required either way - it is this entry's
+ * actual name regardless of whether grade/curriculum apply.
  * <p>
  * Not owned by any Parent - every Admin can manage the whole library (no root-only restriction,
  * unlike {@code AdminManageApi}'s Admin-manages-Admin feature). A Parent links their OWN {@link
- * Subject} rows to documents here via {@link SubjectLibraryLink} (many-to-many - one Subject can
- * link multiple documents, and in principle one document could be linked from multiple Subjects
- * too, e.g. two different Parents' Subjects for the same grade/curriculum) - see {@code
+ * Subject} rows to documents here via {@link SubjectLibraryLink} (many-to-many) - see {@code
  * LibraryService}'s javadoc for the full access model.
  * <p>
- * FILE STORAGE: same convention as {@code Lesson#imagePath}/{@code Question#audioPath} - only the
- * server-generated filename lives in {@link #filePath}, the actual PDF bytes live under {@code
- * LibraryService#LIBRARY_DIR} on disk, never in the database.
+ * FILE STORAGE (revision 2026-09-06): a document may now carry ANY NUMBER of files (was always
+ * exactly one before) - {@code filePath}/{@code fileSize} moved out of this entity entirely into
+ * the new {@link LibraryDocumentFile} child table (one-to-many).
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -43,11 +40,9 @@ public class LibraryDocument extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private int grade;
+    private Integer grade;
     private String subjectName;
     private String curriculum;
     private String volume;
     private String title;
-    private String filePath;
-    private long fileSize;
 }

@@ -12,12 +12,16 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import vn.org.thn.service.app.quiz.dto.LessonAttachmentFile;
+import vn.org.thn.service.app.quiz.dto.LessonAttachmentResponse;
 import vn.org.thn.service.app.quiz.dto.LessonImage;
 import vn.org.thn.service.app.quiz.dto.StudentLessonResponse;
 import vn.org.thn.service.app.quiz.security.JwtAuthFilter;
 import vn.org.thn.service.app.quiz.service.StudentLessonService;
 import vn.org.thn.service.base.controller.BaseCtl;
 import vn.org.thn.service.base.response.ApiResponse;
+
+import java.util.List;
 
 /**
  * Student-facing lesson content (task "Backend: Student xem lai noi dung bai hoc", 2026-09-01) -
@@ -65,5 +69,39 @@ public class StudentLessonApi extends BaseCtl {
                 .contentType(MediaType.parseMediaType(image.contentType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + image.filename() + "\"")
                 .body(image.content());
+    }
+
+    @Operation(
+            summary = "List a lesson's attachments",
+            description = "Same access rule as GET /api/student/lessons/{id}. See LessonApi for the parent-facing equivalent."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the lesson's attachments (possibly empty)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This lesson is not reachable from any test assigned to the current student - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No lesson with this id - COMMON_005 NOT_FOUND")
+    })
+    @GetMapping("/{id}/attachments")
+    public ResponseEntity<ApiResponse<List<LessonAttachmentResponse>>> listAttachments(@Parameter(description = "Lesson id") @PathVariable Long id) {
+        return ok(studentLessonService.listAttachments(id));
+    }
+
+    @Operation(
+            summary = "Download a lesson attachment",
+            description = "Same access rule as GET /api/student/lessons/{id}. See LessonApi for the parent-facing equivalent."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the file (Content-Type set from its stored type)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This lesson is not reachable from any test assigned to the current student - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No lesson with this id, or no attachment with this id on this lesson - COMMON_005 NOT_FOUND")
+    })
+    @GetMapping("/{id}/attachments/{attachmentId}/file")
+    public ResponseEntity<byte[]> downloadAttachment(
+            @Parameter(description = "Lesson id") @PathVariable Long id,
+            @Parameter(description = "Attachment id") @PathVariable Long attachmentId) {
+        LessonAttachmentFile file = studentLessonService.downloadAttachment(id, attachmentId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + file.filename() + "\"")
+                .body(file.content());
     }
 }

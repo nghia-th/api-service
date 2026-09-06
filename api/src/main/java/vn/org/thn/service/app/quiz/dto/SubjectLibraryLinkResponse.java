@@ -1,12 +1,20 @@
 package vn.org.thn.service.app.quiz.dto;
 
 import lombok.Data;
-import vn.org.thn.service.app.quiz.entity.LibraryDocument;
 import vn.org.thn.service.app.quiz.entity.SubjectLibraryLink;
 
 import java.time.LocalDateTime;
 
-/** One row of "documents linked to this Subject" (Parent's {@code GET .../subjects/{id}/links} and the equivalent Student endpoint) - embeds the full {@link LibraryDocumentResponse} so the UI doesn't need a second round-trip per linked document. */
+/**
+ * One row of "documents linked to this Subject" (Parent's {@code GET .../subjects/{id}/links} and
+ * the equivalent Student endpoint) - embeds the full {@link LibraryDocumentResponse} so the UI
+ * doesn't need a second round-trip per linked document.
+ * <p>
+ * Revision 2026-09-06: takes an already-built {@link LibraryDocumentResponse} rather than the raw
+ * {@code LibraryDocument} entity - building that response now also requires loading the
+ * document's {@link LibraryDocumentFileResponse} list, which only {@code LibraryService} (holding
+ * the file repository) can do; see {@code LibraryService#toResponse}.
+ */
 @Data
 public class SubjectLibraryLinkResponse {
     private Long id;
@@ -14,11 +22,11 @@ public class SubjectLibraryLinkResponse {
     private LibraryDocumentResponse document;
     private LocalDateTime linkedAt;
 
-    public static SubjectLibraryLinkResponse from(SubjectLibraryLink link, LibraryDocument doc) {
+    public static SubjectLibraryLinkResponse from(SubjectLibraryLink link, LibraryDocumentResponse document) {
         SubjectLibraryLinkResponse response = new SubjectLibraryLinkResponse();
         response.id = link.getId();
         response.subjectId = link.getSubjectId();
-        response.document = LibraryDocumentResponse.from(doc);
+        response.document = document;
         response.linkedAt = link.getLinkedAt();
         return response;
     }

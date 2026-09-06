@@ -77,6 +77,14 @@ import vn.org.thn.service.base.exception.ErrorCode;
  * the app's own "already studied" convention) - deliberately its own code rather than reusing
  * {@code SUBJECT_NO_QUESTIONS} (QUIZ_018), since that one is specifically about an empty
  * Subject-wide pool for "On tap kien thuc" generation, a different call path/message.
+ * <p>
+ * {@code LESSON_ATTACHMENT_INVALID_TYPE}/{@code LESSON_ATTACHMENT_TOO_LARGE} (QUIZ_043/044, added
+ * 2026-09-06 for the "moi Lesson co the dinh kem 1 hoac nhieu file bai giang (PowerPoint/PDF)"
+ * request) guard {@code LessonService#addAttachment} - same PDF/PowerPoint MIME allow-list and
+ * 50MB cap already used for {@code LibraryDocument} files (see {@code LIBRARY_PDF_INVALID_TYPE}/
+ * {@code LIBRARY_PDF_TOO_LARGE}, whose message text was also widened from "PDF file" to "PDF or
+ * PowerPoint file" in the same change, since a {@code LibraryDocument} entry can now hold either
+ * kind of file too).
  */
 public enum QuizErrorCode implements ErrorCode {
 
@@ -125,8 +133,8 @@ public enum QuizErrorCode implements ErrorCode {
     OLD_PASSWORD_INCORRECT("QUIZ_030", "Current password is incorrect", HttpStatus.BAD_REQUEST),
     ROOT_ADMIN_CANNOT_BE_DELETED("QUIZ_031", "Root admin account cannot be deleted", HttpStatus.CONFLICT),
     LIBRARY_INVALID_TAXONOMY("QUIZ_032", "Grade must be between 1 and 12, and curriculum must be one of the fixed list", HttpStatus.BAD_REQUEST),
-    LIBRARY_PDF_INVALID_TYPE("QUIZ_033", "Library document must be a PDF file", HttpStatus.BAD_REQUEST),
-    LIBRARY_PDF_TOO_LARGE("QUIZ_034", "Library document must be 50MB or smaller", HttpStatus.BAD_REQUEST),
+    LIBRARY_PDF_INVALID_TYPE("QUIZ_033", "Library document file must be a PDF or PowerPoint file", HttpStatus.BAD_REQUEST),
+    LIBRARY_PDF_TOO_LARGE("QUIZ_034", "Library document file must be 50MB or smaller", HttpStatus.BAD_REQUEST),
     LIBRARY_ALREADY_LINKED("QUIZ_035", "This subject is already linked to this document", HttpStatus.CONFLICT),
     CURRICULUM_NAME_TAKEN("QUIZ_036", "A curriculum with this name already exists", HttpStatus.CONFLICT),
     CURRICULUM_IN_USE("QUIZ_037", "Curriculum is still used by a library document - reassign or delete it first", HttpStatus.CONFLICT),
@@ -134,7 +142,9 @@ public enum QuizErrorCode implements ErrorCode {
     LESSON_SELECTION_NO_QUESTIONS("QUIZ_039", "The selected lessons have no questions yet", HttpStatus.BAD_REQUEST),
     LESSON_REPORT_SUBJECT_NOT_TODAY("QUIZ_040", "This lesson's subject is not on today's timetable", HttpStatus.BAD_REQUEST),
     LESSON_ALREADY_REPORTED("QUIZ_041", "This lesson has already been reported as studied", HttpStatus.CONFLICT),
-    LESSON_REPORT_LOCKED("QUIZ_042", "Only a lesson reported today can be undone", HttpStatus.CONFLICT);
+    LESSON_REPORT_LOCKED("QUIZ_042", "Only a lesson reported today can be undone", HttpStatus.CONFLICT),
+    LESSON_ATTACHMENT_INVALID_TYPE("QUIZ_043", "Lesson attachment must be a PDF or PowerPoint file", HttpStatus.BAD_REQUEST),
+    LESSON_ATTACHMENT_TOO_LARGE("QUIZ_044", "Lesson attachment must be 50MB or smaller", HttpStatus.BAD_REQUEST);
 
     private final String code;
     private final String message;

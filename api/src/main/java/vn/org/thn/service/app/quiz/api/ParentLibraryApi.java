@@ -26,12 +26,13 @@ import vn.org.thn.service.base.response.ApiResponse;
 import java.util.List;
 
 /**
- * Parent-facing access to the Admin-managed textbook library (2026-09-05, "thu vien sach giao
- * khoa" feature) - browse the whole catalog, link/unlink own Subjects, download linked documents.
- * See {@link ParentLibraryService}'s javadoc for the full access model. Behind {@link
- * JwtAuthFilter} under {@code /api/parent/*}.
+ * Parent-facing access to the Admin-managed library (2026-09-05, "thu vien sach giao khoa"
+ * feature; extended 2026-09-06 to also cover general "mon hoc" entries with multiple files each) -
+ * browse the whole catalog, link/unlink own Subjects, download a linked entry's files. See {@link
+ * ParentLibraryService}'s javadoc for the full access model. Behind {@link JwtAuthFilter} under
+ * {@code /api/parent/*}.
  */
-@Tag(name = "Parent - Library", description = "Parent browsing, linking and downloading of the textbook library")
+@Tag(name = "Parent - Library", description = "Parent browsing, linking and downloading of the library")
 @RestController
 @RequestMapping("/api/parent")
 public class ParentLibraryApi extends BaseCtl {
@@ -40,11 +41,11 @@ public class ParentLibraryApi extends BaseCtl {
     private ParentLibraryService parentLibraryService;
 
     @Operation(
-            summary = "Browse the whole textbook library",
+            summary = "Browse the whole library",
             description = "Read-only, no ownership filtering - every Parent sees the same whole catalog, to decide what to link. Same filters as the Admin listing."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Matching library documents")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Matching library entries, each with its file list")
     })
     @GetMapping("/library")
     public ResponseEntity<ApiResponse<List<LibraryDocumentResponse>>> browse(
@@ -55,11 +56,11 @@ public class ParentLibraryApi extends BaseCtl {
     }
 
     @Operation(
-            summary = "List documents linked to a subject",
+            summary = "List entries linked to a subject",
             description = "subjectId must belong to the current parent."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Documents currently linked to this subject"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Entries currently linked to this subject, each with its file list"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This subject does not belong to the current parent - COMMON_004 FORBIDDEN"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No subject with this id - COMMON_005 NOT_FOUND")
     })
@@ -69,24 +70,24 @@ public class ParentLibraryApi extends BaseCtl {
     }
 
     @Operation(
-            summary = "Link a subject to a library document",
-            description = "subjectId must belong to the current parent, documentId must exist. One subject can link multiple documents."
+            summary = "Link a subject to a library entry",
+            description = "subjectId must belong to the current parent, documentId must exist. One subject can link multiple entries."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Linked successfully"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This subject does not belong to the current parent - COMMON_004 FORBIDDEN"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No subject or no document with this id - COMMON_005 NOT_FOUND"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No subject or no entry with this id - COMMON_005 NOT_FOUND"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Already linked - QUIZ_035 LIBRARY_ALREADY_LINKED")
     })
     @PostMapping("/subjects/{subjectId}/library-links/{documentId}")
     public ResponseEntity<ApiResponse<SubjectLibraryLinkResponse>> link(
             @Parameter(description = "Subject id") @PathVariable Long subjectId,
-            @Parameter(description = "Library document id") @PathVariable Long documentId) {
+            @Parameter(description = "Library entry id") @PathVariable Long documentId) {
         return ok(parentLibraryService.link(subjectId, documentId));
     }
 
     @Operation(
-            summary = "Unlink a subject from a library document",
+            summary = "Unlink a subject from a library entry",
             description = "subjectId must belong to the current parent."
     )
     @ApiResponses({
@@ -97,25 +98,26 @@ public class ParentLibraryApi extends BaseCtl {
     @DeleteMapping("/subjects/{subjectId}/library-links/{documentId}")
     public ResponseEntity<ApiResponse<Void>> unlink(
             @Parameter(description = "Subject id") @PathVariable Long subjectId,
-            @Parameter(description = "Library document id") @PathVariable Long documentId) {
+            @Parameter(description = "Library entry id") @PathVariable Long documentId) {
         parentLibraryService.unlink(subjectId, documentId);
         return ok();
     }
 
     @Operation(
-            summary = "Download a linked library document's PDF",
-            description = "subjectId must belong to the current parent AND already be linked to documentId."
+            summary = "Download one of a linked entry's files",
+            description = "subjectId must belong to the current parent AND already be linked to documentId. fileId must belong to documentId (revision 2026-09-06 - an entry may now carry multiple files, see the entry's own 'files' list from the endpoints above for valid ids)."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the PDF file"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This subject does not belong to the current parent, or is not linked to this document - COMMON_004 FORBIDDEN"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No subject or no document with this id - COMMON_005 NOT_FOUND")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the file"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This subject does not belong to the current parent, or is not linked to this entry - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No subject/entry/file with this id - COMMON_005 NOT_FOUND")
     })
-    @GetMapping("/subjects/{subjectId}/library-links/{documentId}/file")
+    @GetMapping("/subjects/{subjectId}/library-links/{documentId}/files/{fileId}")
     public ResponseEntity<byte[]> downloadFile(
             @Parameter(description = "Subject id") @PathVariable Long subjectId,
-            @Parameter(description = "Library document id") @PathVariable Long documentId) {
-        LibraryFile file = parentLibraryService.downloadFile(subjectId, documentId);
+            @Parameter(description = "Library entry id") @PathVariable Long documentId,
+            @Parameter(description = "File id") @PathVariable Long fileId) {
+        LibraryFile file = parentLibraryService.downloadFile(subjectId, documentId, fileId);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(file.contentType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + file.filename() + "\"")

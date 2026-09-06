@@ -22,11 +22,12 @@ import vn.org.thn.service.base.response.ApiResponse;
 import java.util.List;
 
 /**
- * Student-facing read-only access to documents linked to a subject in their own classroom
- * (2026-09-05, "thu vien sach giao khoa" feature) - see {@link StudentLibraryService}'s javadoc
- * for the full access model. Behind {@link JwtAuthFilter} under {@code /api/student/*}.
+ * Student-facing read-only access to entries linked to a subject in their own classroom
+ * (2026-09-05, "thu vien sach giao khoa" feature; extended 2026-09-06 for multi-file entries) -
+ * see {@link StudentLibraryService}'s javadoc for the full access model. Behind {@link
+ * JwtAuthFilter} under {@code /api/student/*}.
  */
-@Tag(name = "Student - Library", description = "Student viewing/downloading of textbook library documents linked to their own classroom's subjects")
+@Tag(name = "Student - Library", description = "Student viewing/downloading of library entries linked to their own classroom's subjects")
 @RestController
 @RequestMapping("/api/student")
 public class StudentLibraryApi extends BaseCtl {
@@ -35,11 +36,11 @@ public class StudentLibraryApi extends BaseCtl {
     private StudentLibraryService studentLibraryService;
 
     @Operation(
-            summary = "List documents linked to a subject",
+            summary = "List entries linked to a subject",
             description = "subjectId must be in the current student's own classroom."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Documents currently linked to this subject"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Entries currently linked to this subject, each with its file list"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This subject is not in the current student's classroom - COMMON_004 FORBIDDEN")
     })
     @GetMapping("/subjects/{subjectId}/library-links")
@@ -48,18 +49,19 @@ public class StudentLibraryApi extends BaseCtl {
     }
 
     @Operation(
-            summary = "Download a linked library document's PDF",
-            description = "subjectId must be in the current student's own classroom AND already be linked to documentId."
+            summary = "Download one of a linked entry's files",
+            description = "subjectId must be in the current student's own classroom AND already be linked to documentId. fileId must belong to documentId."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the PDF file"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This subject is not in the current student's classroom, or is not linked to this document - COMMON_004 FORBIDDEN")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the file"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This subject is not in the current student's classroom, or is not linked to this entry - COMMON_004 FORBIDDEN")
     })
-    @GetMapping("/subjects/{subjectId}/library-links/{documentId}/file")
+    @GetMapping("/subjects/{subjectId}/library-links/{documentId}/files/{fileId}")
     public ResponseEntity<byte[]> downloadFile(
             @Parameter(description = "Subject id") @PathVariable Long subjectId,
-            @Parameter(description = "Library document id") @PathVariable Long documentId) {
-        LibraryFile file = studentLibraryService.downloadFile(subjectId, documentId);
+            @Parameter(description = "Library entry id") @PathVariable Long documentId,
+            @Parameter(description = "File id") @PathVariable Long fileId) {
+        LibraryFile file = studentLibraryService.downloadFile(subjectId, documentId, fileId);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(file.contentType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + file.filename() + "\"")

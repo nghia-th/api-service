@@ -7,6 +7,7 @@ import vn.org.thn.service.app.quiz.entity.Attempt;
 import vn.org.thn.service.app.quiz.entity.AttemptAnswer;
 import vn.org.thn.service.app.quiz.entity.Choice;
 import vn.org.thn.service.app.quiz.entity.Lesson;
+import vn.org.thn.service.app.quiz.entity.LessonAttachment;
 import vn.org.thn.service.app.quiz.entity.LessonPreparation;
 import vn.org.thn.service.app.quiz.entity.LessonReport;
 import vn.org.thn.service.app.quiz.entity.Question;
@@ -19,6 +20,7 @@ import vn.org.thn.service.app.quiz.entity.TimetableEntry;
 import vn.org.thn.service.app.quiz.repository.AttemptAnswerRepository;
 import vn.org.thn.service.app.quiz.repository.AttemptRepository;
 import vn.org.thn.service.app.quiz.repository.ChoiceRepository;
+import vn.org.thn.service.app.quiz.repository.LessonAttachmentRepository;
 import vn.org.thn.service.app.quiz.repository.LessonPreparationRepository;
 import vn.org.thn.service.app.quiz.repository.LessonReportRepository;
 import vn.org.thn.service.app.quiz.repository.LessonRepository;
@@ -91,6 +93,8 @@ public class CascadeDeleteService extends IBase {
     private static final Path QUESTION_VIDEO_DIR = DatabasePath.HOME.resolve("uploads").resolve("question-videos");
     /** Same path as {@code StudentAttemptService#SPEAKING_ANSWER_DIR}. */
     private static final Path SPEAKING_ANSWER_DIR = DatabasePath.HOME.resolve("uploads").resolve("speaking-answers");
+    /** Same path as {@code LessonService#ATTACHMENT_DIR}. */
+    private static final Path LESSON_ATTACHMENT_DIR = DatabasePath.HOME.resolve("uploads").resolve("lesson-attachments");
 
     @Autowired
     private TestRepository testRepository;
@@ -115,6 +119,9 @@ public class CascadeDeleteService extends IBase {
 
     @Autowired
     private LessonReportRepository lessonReportRepository;
+
+    @Autowired
+    private LessonAttachmentRepository lessonAttachmentRepository;
 
     @Autowired
     private TimetableEntryRepository timetableEntryRepository;
@@ -206,6 +213,12 @@ public class CascadeDeleteService extends IBase {
         deleteQuestionsCascade(questionIds);
 
         lessonReportRepository.delete().in(LessonReport::getLessonId, lessonIds).execute();
+
+        List<LessonAttachment> attachments = lessonAttachmentRepository.query().in(LessonAttachment::getLessonId, lessonIds).list();
+        for (LessonAttachment attachment : attachments) {
+            deleteFileQuietly(LESSON_ATTACHMENT_DIR, attachment.getFilePath());
+        }
+        lessonAttachmentRepository.delete().in(LessonAttachment::getLessonId, lessonIds).execute();
 
         List<Lesson> lessons = lessonRepository.query().in(Lesson::getId, lessonIds).list();
         for (Lesson lesson : lessons) {

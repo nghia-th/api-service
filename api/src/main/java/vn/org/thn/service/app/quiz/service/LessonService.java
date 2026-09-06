@@ -4,12 +4,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.BulkDeleteResponse;
+import vn.org.thn.service.app.quiz.dto.LessonAttachmentFile;
+import vn.org.thn.service.app.quiz.dto.LessonAttachmentResponse;
 import vn.org.thn.service.app.quiz.dto.LessonCreateRequest;
 import vn.org.thn.service.app.quiz.dto.LessonImage;
 import vn.org.thn.service.app.quiz.dto.LessonResponse;
 import vn.org.thn.service.app.quiz.dto.LessonUpdateRequest;
 import vn.org.thn.service.app.quiz.entity.Lesson;
+import vn.org.thn.service.app.quiz.entity.LessonAttachment;
 import vn.org.thn.service.app.quiz.exception.QuizErrorCode;
+import vn.org.thn.service.app.quiz.repository.LessonAttachmentRepository;
 import vn.org.thn.service.app.quiz.repository.LessonRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.base.IBase;
@@ -74,8 +78,25 @@ public class LessonService extends IBase {
 
     private static final Path IMAGE_DIR = DatabasePath.HOME.resolve("uploads").resolve("lessons");
 
+    /**
+     * Lecture-file attachments (2026-09-06, "bai cua mon hoc cho phep upload 1 hoac nhieu file
+     * bai giang" feature) - PDF or PowerPoint, unlike the single illustrative IMAGE_DIR above.
+     */
+    private static final long MAX_ATTACHMENT_SIZE_BYTES = 50L * 1024 * 1024;
+
+    private static final Map<String, String> ALLOWED_ATTACHMENT_TYPES = Map.of(
+            "application/pdf", "pdf",
+            "application/vnd.ms-powerpoint", "ppt",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation", "pptx"
+    );
+
+    private static final Path ATTACHMENT_DIR = DatabasePath.HOME.resolve("uploads").resolve("lesson-attachments");
+
     @Autowired
     private LessonRepository lessonRepository;
+
+    @Autowired
+    private LessonAttachmentRepository lessonAttachmentRepository;
 
     @Autowired
     private SubjectService subjectService;
@@ -303,5 +324,112 @@ public class LessonService extends IBase {
             throw new BusinessException(CommonErrorCode.NOT_FOUND, "Lesson not found");
         }
         return lesson;
+    }
+
+    // --- Lecture-file attachments (2026-09-06) - a Lesson may have any number of PDF/PowerPoint
+    // files, added/removed freely by the owning Parent, viewable/downloadable by both Parent and
+    // (via StudentLessonService) any Student who can already see this Lesson's content. Same
+    // "public method does ownership + delegates, package-private method has no check" split as
+    // the image methods above.
+
+    /** Every attachment of {@code lessonId}, owned-check performed here. */
+    public List<LessonAttachmentResponse> listAttachmentsOwned(Long lessonId) {
+        Long parentId = CurrentUser.get().userId();
+        Lesson lesson = getOwnedOrThrow(lessonId, parentId);
+        return listAttachments(lesson.getId());
+    }
+
+    /** Validates {@code file} against {@link #ALLOWED_ATTACHMENT_TYPES}/{@link #MAX_ATTACHMENT_SIZE_BYTES}, stores it, and adds a new {@link LessonAttachment} row - never replaces an existing one, a Lesson can carry any number of them. */
+    public LessonAttachmentResponse addAttachment(Long lessonId, MultipartFile file) {
+        Long parentId = CurrentUser.get().userId();
+        Lesson lesson = getOwnedOrThrow(lessonId, parentId);
+
+        String extension = ALLOWED_ATTACHMENT_TYPES.get(file.getContentType());
+        if (extension == null) {
+            throw new BusinessException(QuizErrorCode.LESSON_ATTACHMENT_INVALID_TYPE);
+        }
+        if (file.getSize() > MAX_ATTACHMENT_SIZE_BYTES) {
+            throw new BusinessException(QuizErrorCode.LESSON_ATTACHMENT_TOO_LARGE);
+        }
+
+        try {
+            Files.createDirectories(ATTACHMENT_DIR);
+        } catch (IOException e) {
+            logError("Could not create lesson attachment directory " + ATTACHMENT_DIR, e);
+            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
+        }
+
+        String filename = "lesson-" + lesson.getId() + "-" + UUID.randomUUID() + "." + extension;
+        Path target = ATTACHMENT_DIR.resolve(filename);
+        try {
+            file.transferTo(target);
+        } catch (IOException e) {
+            logError("Could not save lesson attachment to " + target, e);
+            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
+        }
+
+        String originalName = file.getOriginalFilename();
+        LessonAttachment attachment = new LessonAttachment();
+        attachment.setLessonId(lesson.getId());
+        attachment.setOriginalName(originalName == null || originalName.isBlank() ? "file" : originalName);
+        attachment.setFilePath(filename);
+        attachment.setFileSize(file.getSize());
+        attachment.setContentType(file.getContentType());
+        attachment.setCreatedAt(LocalDateTime.now());
+        attachment.setCreatedBy("parent:" + parentId);
+        attachment = lessonAttachmentRepository.save(attachment);
+
+        logInfo("Lesson attachment added: lessonId={}, attachmentId={}, parentId={}", lessonId, attachment.getId(), parentId);
+        return LessonAttachmentResponse.from(attachment);
+    }
+
+    /** Deletes one attachment (row + bytes on disk) - only the owning Parent can remove it. */
+    public void removeAttachment(Long lessonId, Long attachmentId) {
+        Long parentId = CurrentUser.get().userId();
+        getOwnedOrThrow(lessonId, parentId);
+        LessonAttachment attachment = getAttachmentOrThrow(lessonId, attachmentId);
+
+        lessonAttachmentRepository.deleteById(attachmentId);
+        try {
+            Files.deleteIfExists(ATTACHMENT_DIR.resolve(attachment.getFilePath()));
+        } catch (IOException e) {
+            log().warn("Could not delete lesson attachment file {}: {}", attachment.getFilePath(), e.getMessage());
+        }
+        logInfo("Lesson attachment removed: lessonId={}, attachmentId={}, parentId={}", lessonId, attachmentId, parentId);
+    }
+
+    /** Downloads one attachment - only the owning Parent can view it. See {@code StudentLessonService} for the student-facing equivalent. */
+    public LessonAttachmentFile downloadAttachmentOwned(Long lessonId, Long attachmentId) {
+        Long parentId = CurrentUser.get().userId();
+        getOwnedOrThrow(lessonId, parentId);
+        return loadAttachmentFile(getAttachmentOrThrow(lessonId, attachmentId));
+    }
+
+    /** Every attachment of {@code lessonId}, no ownership check - package-private, reused by {@link #listAttachmentsOwned} and by {@code StudentLessonService} once it has independently proven the caller may see this Lesson. */
+    List<LessonAttachmentResponse> listAttachments(Long lessonId) {
+        return lessonAttachmentRepository.query().eq(LessonAttachment::getLessonId, lessonId).list()
+                .stream().map(LessonAttachmentResponse::from).toList();
+    }
+
+    /** Loads the attachment with id {@code attachmentId}, throwing NOT_FOUND unless it exists AND belongs to {@code lessonId} - package-private, no Lesson ownership check of its own. */
+    LessonAttachment getAttachmentOrThrow(Long lessonId, Long attachmentId) {
+        LessonAttachment attachment = lessonAttachmentRepository.findById(attachmentId);
+        if (attachment == null || !attachment.getLessonId().equals(lessonId)) {
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Lesson attachment not found");
+        }
+        return attachment;
+    }
+
+    /** Reads the attachment's bytes off disk. Package-private + takes the already-resolved {@link LessonAttachment} (no access check of its own), same reasoning as {@link #loadImage}. */
+    LessonAttachmentFile loadAttachmentFile(LessonAttachment attachment) {
+        Path path = ATTACHMENT_DIR.resolve(attachment.getFilePath());
+        byte[] bytes;
+        try {
+            bytes = Files.readAllBytes(path);
+        } catch (IOException e) {
+            logError("Lesson attachment file missing on disk: " + path, e);
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Lesson attachment file not found");
+        }
+        return new LessonAttachmentFile(bytes, attachment.getContentType(), attachment.getOriginalName());
     }
 }

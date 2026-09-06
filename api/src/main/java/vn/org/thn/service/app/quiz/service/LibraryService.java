@@ -3,14 +3,17 @@ package vn.org.thn.service.app.quiz.service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import vn.org.thn.service.app.quiz.dto.LibraryDocumentFileResponse;
 import vn.org.thn.service.app.quiz.dto.LibraryDocumentResponse;
 import vn.org.thn.service.app.quiz.dto.LibraryFile;
 import vn.org.thn.service.app.quiz.dto.SubjectLibraryLinkResponse;
 import vn.org.thn.service.app.quiz.entity.Curriculum;
 import vn.org.thn.service.app.quiz.entity.LibraryDocument;
+import vn.org.thn.service.app.quiz.entity.LibraryDocumentFile;
 import vn.org.thn.service.app.quiz.entity.SubjectLibraryLink;
 import vn.org.thn.service.app.quiz.exception.QuizErrorCode;
 import vn.org.thn.service.app.quiz.repository.CurriculumRepository;
+import vn.org.thn.service.app.quiz.repository.LibraryDocumentFileRepository;
 import vn.org.thn.service.app.quiz.repository.LibraryDocumentRepository;
 import vn.org.thn.service.app.quiz.repository.SubjectLibraryLinkRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
@@ -28,49 +31,48 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Admin-managed textbook PDF library (2026-09-05, "thu vien sach giao khoa" feature, per the
- * user's explicit request): an Admin uploads PDF textbooks organized by {@code grade} (1-12),
- * {@code subjectName} (free text, e.g. "Toan") and {@code curriculum} (a name from the
- * Admin-managed {@link vn.org.thn.service.app.quiz.entity.Curriculum} list, see {@code
- * CurriculumService}'s javadoc - previously a hardcoded 3-value list, changed 2026-09-05 per
- * the user's explicit request), plus an optional {@code volume} - see {@link LibraryDocument}'s javadoc for the full
- * shape and the user's own example ("Lop 4 -&gt; Toan tap 1 -&gt; Ket noi tri thuc").
+ * Admin-managed library (2026-09-05, "thu vien sach giao khoa" feature; extended 2026-09-06 per
+ * the user's explicit choice - see {@link LibraryDocument}'s javadoc): an Admin creates entries
+ * organized by an optional {@code grade} (1-12) and {@code curriculum} (a name from the
+ * Admin-managed {@link Curriculum} list) - a general "mon hoc" not tied to any grade/curriculum
+ * (e.g. "Lap trinh Python") simply leaves both blank - plus a required {@code subjectName} and an
+ * optional {@code volume}. Each entry can carry any number of files (PDF or PowerPoint), added
+ * and removed one at a time after the entry itself is created.
  * <p>
  * ACCESS MODEL (3 roles, mirroring {@code LessonService}/{@code StudentLessonService}'s existing
  * "one shared file-serving method, per-role access check" shape):
  * <ul>
  *     <li><b>Admin</b> ({@code AdminLibraryApi}, this class) - full CRUD over the whole library,
  *     no root restriction (unlike {@code AdminManageApi}'s Admin-manages-Admin feature - every
- *     Admin can manage textbooks).</li>
+ *     Admin can manage it).</li>
  *     <li><b>Parent</b> ({@code ParentLibraryApi}/{@code ParentLibraryService}) - browses the
  *     WHOLE library read-only (to decide what to link, {@link #list}), then links/unlinks their
- *     OWN {@link vn.org.thn.service.app.quiz.entity.Subject} rows to documents (many-to-many, one
- *     Subject can link multiple documents, per the user's explicit decision) via {@link
- *     vn.org.thn.service.app.quiz.entity.SubjectLibraryLink} - the actual PDF file is only
- *     reachable for a Subject the Parent owns AND has linked.</li>
+ *     OWN {@link vn.org.thn.service.app.quiz.entity.Subject} rows to entries (many-to-many) via
+ *     {@link vn.org.thn.service.app.quiz.entity.SubjectLibraryLink} - a file is only reachable for
+ *     a Subject the Parent owns AND has linked.</li>
  *     <li><b>Student</b> ({@code StudentLibraryApi}/{@code StudentLibraryService}) - read-only,
- *     can view/download a document linked to any Subject in their OWN classroom (per the user's
- *     explicit decision that both Parent AND Student can view/download) - a more direct
- *     Subject-&gt;Classroom-&gt;Student check than {@code StudentLessonService}'s Test-assignment-
- *     based one, since a textbook is reference material for the whole Subject/Classroom, not tied
- *     to any specific assigned Test.</li>
+ *     can view/download a file linked to any Subject in their OWN classroom.</li>
  * </ul>
- * {@link #getById}/{@link #loadFile}/{@link #listLinksForSubject}/{@link #isLinked} are
- * package-private with NO ownership check of their own, reused by {@code ParentLibraryService}/
- * {@code StudentLibraryService} once each has independently proven (its own, different) access
- * rule - same "shared low-level method, per-role check happens one layer up" shape as {@code
- * LessonService#getById}/{@code #loadImage}.
+ * {@link #getById}/{@link #getFileOrThrow}/{@link #loadFile}/{@link #listLinksForSubject}/{@link
+ * #isLinked}/{@link #toResponse} are package-private with NO ownership check of their own, reused
+ * by {@code ParentLibraryService}/{@code StudentLibraryService} once each has independently proven
+ * (its own, different) access rule - same "shared low-level method, per-role check happens one
+ * layer up" shape as {@code LessonService#getById}.
  * <p>
  * FILE STORAGE: same convention as {@code LessonService}'s {@code IMAGE_DIR} - only the
- * server-generated filename lives in {@code LibraryDocument.filePath}, the actual PDF bytes live
+ * server-generated filename lives in {@code LibraryDocumentFile.filePath}, the actual bytes live
  * under {@link #LIBRARY_DIR} (a service-local folder, per {@code DatabasePath}'s own javadoc
  * guidance not to extend that class for app-specific upload folders).
  */
 @Service
 public class LibraryService extends IBase {
 
-    private static final long MAX_PDF_SIZE_BYTES = 50L * 1024 * 1024;
-    private static final Map<String, String> ALLOWED_PDF_TYPES = Map.of("application/pdf", "pdf");
+    private static final long MAX_FILE_SIZE_BYTES = 50L * 1024 * 1024;
+    private static final Map<String, String> ALLOWED_FILE_TYPES = Map.of(
+            "application/pdf", "pdf",
+            "application/vnd.ms-powerpoint", "ppt",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation", "pptx"
+    );
     private static final Path LIBRARY_DIR = DatabasePath.HOME.resolve("uploads").resolve("library");
 
     private static final int MIN_GRADE = 1;
@@ -78,6 +80,9 @@ public class LibraryService extends IBase {
 
     @Autowired
     private LibraryDocumentRepository libraryDocumentRepository;
+
+    @Autowired
+    private LibraryDocumentFileRepository libraryDocumentFileRepository;
 
     @Autowired
     private CurriculumRepository curriculumRepository;
@@ -92,100 +97,82 @@ public class LibraryService extends IBase {
                 .like(LibraryDocument::getSubjectName, subjectName)
                 .eq(LibraryDocument::getCurriculum, curriculum)
                 .list()
-                .stream().map(LibraryDocumentResponse::from).toList();
-    }
-
-    /** Admin-only (enforced by {@code JwtAuthFilter}'s {@code /api/admin/*} prefix, no further root check - see this class's javadoc). Validates grade against the 1-12 range and curriculum against the Admin-managed Curriculum list, and the file against {@link #ALLOWED_PDF_TYPES}/{@link #MAX_PDF_SIZE_BYTES} before anything is written to disk. */
-    public LibraryDocumentResponse upload(int grade, String subjectName, String curriculum, String volume, String title, MultipartFile file) {
-        validateTaxonomy(grade, curriculum);
-        String filename = saveFileOrThrow(file);
-        LibraryDocument doc = buildAndSaveRow(grade, subjectName, curriculum, volume, title, filename, file.getSize());
-
-        logInfo("Library document uploaded: id={}, grade={}, subjectName={}, curriculum={}, adminId={}",
-                doc.getId(), grade, subjectName, curriculum, CurrentUser.get().userId());
-        return LibraryDocumentResponse.from(doc);
+                .stream().map(this::toResponse).toList();
     }
 
     /**
-     * Creates a library document row with NO file attached yet (2026-09-05, item 1 of the
-     * 11-item batch request, "cho phep import file [danh sach sach] sau do upload sach giao khoa
-     * sau" - the Admin bulk-imports the METADATA rows from a spreadsheet first, then attaches
-     * each row's actual PDF afterward via {@link #attachFile} one at a time, since a spreadsheet
-     * cannot carry file bytes). Used only by {@code LibraryImportService} - never exposed as its
-     * own endpoint (there is no product reason to create a permanently file-less row by hand).
-     * <p>
-     * "No file yet" is represented as {@code filePath=""}/{@code fileSize=0} rather than a schema
-     * change (both columns are NOT NULL - see {@code V1__init.sql}) - a real migration to make
-     * them nullable was considered and rejected as unnecessary risk for a purely cosmetic
-     * distinction; {@link LibraryDocumentResponse#isHasFile()} treats a blank {@code filePath} as
-     * "no file" either way.
+     * Admin-only. Creates a library document row with NO file yet - files are attached
+     * afterward, one at a time, via {@link #addFile} (a document can carry any number of them,
+     * see this class's javadoc). {@code grade}/{@code curriculum} are validated only when
+     * provided (both null is a valid, general "mon hoc" entry - see {@link
+     * LibraryDocument}'s javadoc, revision 2026-09-06).
      */
-    LibraryDocumentResponse createMetadataOnly(int grade, String subjectName, String curriculum, String volume, String title) {
+    public LibraryDocumentResponse create(Integer grade, String subjectName, String curriculum, String volume, String title) {
         validateTaxonomy(grade, curriculum);
-        LibraryDocument doc = buildAndSaveRow(grade, subjectName, curriculum, volume, title, "", 0L);
-        logInfo("Library document created without file (import): id={}, grade={}, subjectName={}, curriculum={}, adminId={}",
+        LibraryDocument doc = buildAndSaveRow(grade, subjectName, curriculum, volume, title);
+        logInfo("Library document created: id={}, grade={}, subjectName={}, curriculum={}, adminId={}",
                 doc.getId(), grade, subjectName, curriculum, CurrentUser.get().userId());
-        return LibraryDocumentResponse.from(doc);
+        return toResponse(doc);
     }
 
     /**
      * Whether a NON-DELETED row already has this exact grade+subjectName+curriculum+volume
      * combination - used only by {@code LibraryImportService} to reject a duplicate row during
-     * import (AskUserQuestion 2026-09-05: "bao loi dong do, bo qua" - skip and report the row
-     * rather than silently creating a second copy or silently merging). {@code volume} is
-     * normalized the same way {@link #buildAndSaveRow} stores it (blank/null both mean "no
-     * volume") so "" and {@code null} are never treated as different volumes here.
+     * import. {@code eq(field, null)} is a NO-OP in this query builder (means "don't filter on
+     * this field" - see {@link #list}'s intentional use of that for optional search filters), so
+     * a null grade/curriculum/volume must use {@code isNull()} explicitly here, same fix already
+     * applied to volume before this revision - otherwise a row with no grade/curriculum would be
+     * treated as a duplicate of ANY other row's grade/curriculum instead of specifically "none".
      */
-    boolean existsExact(int grade, String subjectName, String curriculum, String volume) {
+    boolean existsExact(Integer grade, String subjectName, String curriculum, String volume) {
         String normalizedVolume = (volume == null || volume.isBlank()) ? null : volume.trim();
-        // eq(field, null) is a NO-OP in this query builder (means "don't filter on this field" -
-        // see list()'s intentional use of that for optional search filters), so a null volume
-        // must use isNull() explicitly here - eq() would otherwise match ANY volume instead of
-        // specifically "no volume", turning every "Toan lop 4, Ket noi tri thuc, khong Tap" row
-        // into a false-positive duplicate against "Toan lop 4, Ket noi tri thuc, Tap 1".
-        var query = libraryDocumentRepository.query()
-                .eq(LibraryDocument::getGrade, grade)
-                .eq(LibraryDocument::getSubjectName, subjectName)
-                .eq(LibraryDocument::getCurriculum, curriculum);
+        var query = libraryDocumentRepository.query().eq(LibraryDocument::getSubjectName, subjectName);
+        query = grade == null ? query.isNull(LibraryDocument::getGrade) : query.eq(LibraryDocument::getGrade, grade);
+        query = curriculum == null ? query.isNull(LibraryDocument::getCurriculum) : query.eq(LibraryDocument::getCurriculum, curriculum);
         query = normalizedVolume == null ? query.isNull(LibraryDocument::getVolume) : query.eq(LibraryDocument::getVolume, normalizedVolume);
         return query.exists();
     }
 
     /**
-     * Attaches (or replaces) the PDF for an existing library document - the second half of the
-     * "import metadata now, upload the file later" flow (see {@link #createMetadataOnly}). If the
-     * row already has a file, the old one is deleted from disk first (same "remove then
-     * re-upload" shape as {@code LessonService}'s image replace / {@code QuestionService}'s audio
-     * replace) - this endpoint doubles as a plain "replace the PDF" action for a row that already
-     * has one, not only for file-less rows from an import.
+     * Admin-only. Adds one more file to an existing document - unlike the pre-2026-09-06
+     * {@code attachFile} this replaced, this never deletes a previous file (a document can carry
+     * any number of them now); removing one is a separate explicit action, see {@link
+     * #removeFile}.
      */
-    public LibraryDocumentResponse attachFile(Long id, MultipartFile file) {
-        LibraryDocument doc = libraryDocumentRepository.findById(id);
-        if (doc == null) {
-            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Library document not found");
-        }
-        if (doc.getFilePath() != null && !doc.getFilePath().isBlank()) {
-            try {
-                Files.deleteIfExists(LIBRARY_DIR.resolve(doc.getFilePath()));
-            } catch (IOException e) {
-                logError("Could not delete old library file " + doc.getFilePath(), e);
-            }
-        }
-
+    public LibraryDocumentFileResponse addFile(Long documentId, MultipartFile file) {
+        LibraryDocument doc = getById(documentId);
         String filename = saveFileOrThrow(file);
         Long adminId = CurrentUser.get().userId();
-        doc.setFilePath(filename);
-        doc.setFileSize(file.getSize());
-        doc.setUpdatedAt(LocalDateTime.now());
-        doc.setUpdatedBy("admin:" + adminId);
-        doc = libraryDocumentRepository.save(doc);
+        LocalDateTime now = LocalDateTime.now();
 
-        logInfo("Library document file attached: id={}, adminId={}", doc.getId(), adminId);
-        return LibraryDocumentResponse.from(doc);
+        LibraryDocumentFile row = new LibraryDocumentFile();
+        row.setLibraryDocumentId(doc.getId());
+        row.setOriginalName(originalNameOrDefault(file));
+        row.setFilePath(filename);
+        row.setFileSize(file.getSize());
+        row.setContentType(file.getContentType());
+        row.setUploadedAt(now);
+        row.setUploadedBy("admin:" + adminId);
+        row = libraryDocumentFileRepository.save(row);
+
+        logInfo("Library document file added: documentId={}, fileId={}, adminId={}", documentId, row.getId(), adminId);
+        return LibraryDocumentFileResponse.from(row);
     }
 
-    /** Throws {@link QuizErrorCode#LIBRARY_INVALID_TAXONOMY} if grade is outside 1-12 or curriculum is not a known name from the Admin-managed Curriculum list. */
-    private void validateTaxonomy(int grade, String curriculum) {
+    /** Admin-only. Deletes one file (and its bytes on disk) from a document - the document row itself and its other files are untouched. */
+    public void removeFile(Long documentId, Long fileId) {
+        LibraryDocumentFile file = getFileOrThrow(documentId, fileId);
+        libraryDocumentFileRepository.deleteById(fileId);
+        try {
+            Files.deleteIfExists(LIBRARY_DIR.resolve(file.getFilePath()));
+        } catch (IOException e) {
+            log().warn("Could not delete library file {}: {}", file.getFilePath(), e.getMessage());
+        }
+        logInfo("Library document file removed: documentId={}, fileId={}, adminId={}", documentId, fileId, CurrentUser.get().userId());
+    }
+
+    /** Throws {@link QuizErrorCode#LIBRARY_INVALID_TAXONOMY} if a provided grade is outside 1-12 or a provided curriculum is not a known name from the Admin-managed Curriculum list. Both null is always valid (a general "mon hoc" entry, see {@link LibraryDocument}'s javadoc). */
+    private void validateTaxonomy(Integer grade, String curriculum) {
         if (!isValidTaxonomy(grade, curriculum)) {
             throw new BusinessException(QuizErrorCode.LIBRARY_INVALID_TAXONOMY);
         }
@@ -193,22 +180,23 @@ public class LibraryService extends IBase {
 
     /**
      * Same check as {@link #validateTaxonomy} but returns a boolean instead of throwing - used by
-     * {@code LibraryImportService} so a single bad row (invalid grade/curriculum) can be reported
-     * as a per-row error and skipped, matching every other bulk-import feature's "never throw for
-     * a row-level problem" convention (see {@code QuestionImportService}'s class javadoc).
+     * {@code LibraryImportService} so a single bad row can be reported as a per-row error and
+     * skipped. Revision 2026-09-06: a null grade/curriculum is always valid on its own (skips that
+     * half of the check) - only a NON-null value still has to be in range/known.
      */
-    boolean isValidTaxonomy(int grade, String curriculum) {
-        return grade >= MIN_GRADE && grade <= MAX_GRADE
-                && curriculumRepository.query().eq(Curriculum::getName, curriculum).exists();
+    boolean isValidTaxonomy(Integer grade, String curriculum) {
+        boolean gradeOk = grade == null || (grade >= MIN_GRADE && grade <= MAX_GRADE);
+        boolean curriculumOk = curriculum == null || curriculumRepository.query().eq(Curriculum::getName, curriculum).exists();
+        return gradeOk && curriculumOk;
     }
 
-    /** Validates {@code file} against {@link #ALLOWED_PDF_TYPES}/{@link #MAX_PDF_SIZE_BYTES} and writes it to {@link #LIBRARY_DIR} under a fresh random filename, returning that filename (never the original one - same convention as every other upload in this codebase). */
+    /** Validates {@code file} against {@link #ALLOWED_FILE_TYPES}/{@link #MAX_FILE_SIZE_BYTES} and writes it to {@link #LIBRARY_DIR} under a fresh random filename, returning that filename (never the original one - same convention as every other upload in this codebase). */
     private String saveFileOrThrow(MultipartFile file) {
-        String extension = ALLOWED_PDF_TYPES.get(file.getContentType());
+        String extension = ALLOWED_FILE_TYPES.get(file.getContentType());
         if (extension == null) {
             throw new BusinessException(QuizErrorCode.LIBRARY_PDF_INVALID_TYPE);
         }
-        if (file.getSize() > MAX_PDF_SIZE_BYTES) {
+        if (file.getSize() > MAX_FILE_SIZE_BYTES) {
             throw new BusinessException(QuizErrorCode.LIBRARY_PDF_TOO_LARGE);
         }
 
@@ -224,14 +212,19 @@ public class LibraryService extends IBase {
         try {
             file.transferTo(target);
         } catch (IOException e) {
-            logError("Could not save library document to " + target, e);
+            logError("Could not save library document file to " + target, e);
             throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
         }
         return filename;
     }
 
-    /** Builds and saves one {@link LibraryDocument} row - shared by {@link #upload} (real file) and {@link #createMetadataOnly} (import, {@code filePath=""}/{@code fileSize=0}). */
-    private LibraryDocument buildAndSaveRow(int grade, String subjectName, String curriculum, String volume, String title, String filePath, long fileSize) {
+    private static String originalNameOrDefault(MultipartFile file) {
+        String name = file.getOriginalFilename();
+        return (name == null || name.isBlank()) ? "file" : name;
+    }
+
+    /** Builds and saves one {@link LibraryDocument} row - no file fields anymore (revision 2026-09-06, see this class's javadoc). */
+    private LibraryDocument buildAndSaveRow(Integer grade, String subjectName, String curriculum, String volume, String title) {
         Long adminId = CurrentUser.get().userId();
         LocalDateTime now = LocalDateTime.now();
         String actor = "admin:" + adminId;
@@ -245,8 +238,6 @@ public class LibraryService extends IBase {
         doc.setCurriculum(curriculum);
         doc.setVolume(volume == null || volume.isBlank() ? null : volume.trim());
         doc.setTitle(resolvedTitle);
-        doc.setFilePath(filePath);
-        doc.setFileSize(fileSize);
         doc.setCreatedAt(now);
         doc.setUpdatedAt(now);
         doc.setCreatedBy(actor);
@@ -254,34 +245,42 @@ public class LibraryService extends IBase {
         return libraryDocumentRepository.save(doc);
     }
 
-    /** e.g. "Toán 4 - Tập 1 - Kết nối tri thức" (volume omitted if blank) - only used when the Admin leaves the title field blank on upload. */
-    private String defaultTitle(int grade, String subjectName, String volume, String curriculum) {
-        StringBuilder sb = new StringBuilder(subjectName).append(' ').append(grade);
+    /** e.g. "Toán 4 - Tập 1 - Kết nối tri thức", or just "Lập trình Python" when grade/volume/curriculum are all absent - only used when the Admin leaves the title field blank. */
+    private String defaultTitle(Integer grade, String subjectName, String volume, String curriculum) {
+        StringBuilder sb = new StringBuilder(subjectName);
+        if (grade != null) {
+            sb.append(' ').append(grade);
+        }
         if (volume != null && !volume.isBlank()) {
             sb.append(" - ").append(volume.trim());
         }
-        sb.append(" - ").append(curriculum);
+        if (curriculum != null && !curriculum.isBlank()) {
+            sb.append(" - ").append(curriculum);
+        }
         return sb.toString();
     }
 
-    /** Admin-only. Permanently deletes the document row, its PDF file, and every {@link SubjectLibraryLink} referencing it (cascade, no blocking rule - same "delete means delete" shape as {@code AdminParentService#deleteCascade}, since a removed textbook naturally removes any Parent's link to it too). */
+    /** Admin-only. Permanently deletes the document row, every one of its files (rows + bytes on disk), and every {@link SubjectLibraryLink} referencing it (cascade, no blocking rule - same "delete means delete" shape as {@code AdminParentService#deleteCascade}). */
     public void delete(Long id) {
-        LibraryDocument doc = getById(id);
-
+        getById(id);
+        List<LibraryDocumentFile> files = libraryDocumentFileRepository.query().eq(LibraryDocumentFile::getLibraryDocumentId, id).list();
+        for (LibraryDocumentFile file : files) {
+            try {
+                Files.deleteIfExists(LIBRARY_DIR.resolve(file.getFilePath()));
+            } catch (IOException e) {
+                log().warn("Could not delete library document file {}: {}", file.getFilePath(), e.getMessage());
+            }
+        }
+        libraryDocumentFileRepository.delete().eq(LibraryDocumentFile::getLibraryDocumentId, id).execute();
         subjectLibraryLinkRepository.delete().eq(SubjectLibraryLink::getLibraryDocumentId, id).execute();
         libraryDocumentRepository.deleteById(id);
-        try {
-            Files.deleteIfExists(LIBRARY_DIR.resolve(doc.getFilePath()));
-        } catch (IOException e) {
-            log().warn("Could not delete library document file {}: {}", doc.getFilePath(), e.getMessage());
-        }
 
-        logInfo("Library document deleted: id={}, adminId={}", id, CurrentUser.get().userId());
+        logInfo("Library document deleted: id={}, filesDeleted={}, adminId={}", id, files.size(), CurrentUser.get().userId());
     }
 
-    /** Admin-only download/view (no ownership concept for Admin - full access, see this class's javadoc). Public, unlike {@link #getById}/{@link #loadFile} below (package-private, reused by Parent/Student after THEIR OWN access checks) - Admin has no separate check to perform first. */
-    public LibraryFile downloadForAdmin(Long id) {
-        return loadFile(getById(id));
+    /** Admin-only download/view (no ownership concept for Admin - full access, see this class's javadoc). Public, unlike {@link #getFileOrThrow}/{@link #loadFile} below (package-private, reused by Parent/Student after THEIR OWN access checks) - Admin has no separate check to perform first. */
+    public LibraryFile downloadForAdmin(Long documentId, Long fileId) {
+        return loadFile(getFileOrThrow(documentId, fileId));
     }
 
     /** Loads the LibraryDocument with id {@code id} with NO ownership check at all - package-private so {@code ParentLibraryService}/{@code StudentLibraryService} can resolve it after doing their own (different) access checks, same shape as {@code LessonService#getById}. */
@@ -293,9 +292,18 @@ public class LibraryService extends IBase {
         return doc;
     }
 
-    /** Reads the document's PDF bytes off disk. Package-private + takes the already-resolved {@link LibraryDocument} (no access check of its own), same reasoning as {@code LessonService#loadImage}. */
-    LibraryFile loadFile(LibraryDocument doc) {
-        Path path = LIBRARY_DIR.resolve(doc.getFilePath());
+    /** Loads the file with id {@code fileId}, throwing NOT_FOUND unless it exists AND belongs to {@code documentId} - package-private, no ownership check of {@code documentId} itself (see this class's javadoc). */
+    LibraryDocumentFile getFileOrThrow(Long documentId, Long fileId) {
+        LibraryDocumentFile file = libraryDocumentFileRepository.findById(fileId);
+        if (file == null || !file.getLibraryDocumentId().equals(documentId)) {
+            throw new BusinessException(CommonErrorCode.NOT_FOUND, "Library document file not found");
+        }
+        return file;
+    }
+
+    /** Reads the file's bytes off disk. Package-private + takes the already-resolved {@link LibraryDocumentFile} (no access check of its own), same reasoning as {@code LessonService#loadImage}. */
+    LibraryFile loadFile(LibraryDocumentFile file) {
+        Path path = LIBRARY_DIR.resolve(file.getFilePath());
         byte[] bytes;
         try {
             bytes = Files.readAllBytes(path);
@@ -303,14 +311,25 @@ public class LibraryService extends IBase {
             logError("Library document file missing on disk: " + path, e);
             throw new BusinessException(CommonErrorCode.NOT_FOUND, "Library document file not found");
         }
-        return new LibraryFile(bytes, "application/pdf", doc.getFilePath());
+        return new LibraryFile(bytes, file.getContentType(), file.getOriginalName());
+    }
+
+    /** Every file belonging to {@code documentId}, in no guaranteed order - package-private, used by {@link #toResponse} and reused directly by {@code AdminLibraryApi} for the file list under one document. */
+    List<LibraryDocumentFileResponse> listFiles(Long documentId) {
+        return libraryDocumentFileRepository.query().eq(LibraryDocumentFile::getLibraryDocumentId, documentId).list()
+                .stream().map(LibraryDocumentFileResponse::from).toList();
+    }
+
+    /** Builds the full response for one document, including its file list - package-private, the only place {@link LibraryDocumentResponse#from} is called from (every list/get/link path in this feature goes through here so the file list is never forgotten). */
+    LibraryDocumentResponse toResponse(LibraryDocument doc) {
+        return LibraryDocumentResponse.from(doc, listFiles(doc.getId()));
     }
 
     /** Every document linked to {@code subjectId}, newest link first is NOT guaranteed (client sorts, same convention as every other "list everything" endpoint) - package-private, NO ownership check of its own (see this class's javadoc); {@code ParentLibraryService}/{@code StudentLibraryService} call this only after independently proving the caller may see this Subject. */
     List<SubjectLibraryLinkResponse> listLinksForSubject(Long subjectId) {
         List<SubjectLibraryLink> links = subjectLibraryLinkRepository.query().eq(SubjectLibraryLink::getSubjectId, subjectId).list();
         return links.stream()
-                .map(link -> SubjectLibraryLinkResponse.from(link, getById(link.getLibraryDocumentId())))
+                .map(link -> SubjectLibraryLinkResponse.from(link, toResponse(getById(link.getLibraryDocumentId()))))
                 .toList();
     }
 
@@ -331,7 +350,7 @@ public class LibraryService extends IBase {
         link.setLinkedAt(now);
         link.setLinkedBy(linkedBy);
         link = subjectLibraryLinkRepository.save(link);
-        return SubjectLibraryLinkResponse.from(link, getById(documentId));
+        return SubjectLibraryLinkResponse.from(link, toResponse(getById(documentId)));
     }
 
     /** Removes the link row, throwing {@code COMMON_005 NOT_FOUND} if it doesn't exist - package-private, called only by {@code ParentLibraryService#unlink} after it has already checked Subject ownership. */

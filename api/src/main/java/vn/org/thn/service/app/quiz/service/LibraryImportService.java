@@ -59,6 +59,14 @@ public class LibraryImportService extends IBase {
             EXAMPLE_ROW_MARKER + "4", "Toán", "Kết nối tri thức", "1", "Toán 4 - Tập 1 - Kết nối tri thức"
     };
 
+    // Revision 2026-09-06: Lop/Bo sach are now OPTIONAL (a general "mon hoc" not tied to any
+    // grade/curriculum leaves both blank - see LibraryDocument's javadoc); this second example
+    // row demonstrates that case. Its own marker column starts with EXAMPLE_ROW_MARKER too, same
+    // "always skipped whether or not it is deleted" convention as EXAMPLE_ROW.
+    private static final String[] EXAMPLE_ROW_2 = {
+            EXAMPLE_ROW_MARKER, "Lập trình Python", "", "", "Lập trình Python"
+    };
+
     @Autowired
     private LibraryService libraryService;
 
@@ -128,34 +136,37 @@ public class LibraryImportService extends IBase {
     private String importRow(String[] row) {
         String gradeRaw = row[0].trim();
         String subjectName = row[1].trim();
-        String curriculum = row[2].trim();
+        String curriculumRaw = row[2].trim();
         String volume = row[3].trim();
         String title = row[4].trim();
 
         if (subjectName.isEmpty()) {
             return "Thiếu tên môn học (cột B)";
         }
-        if (curriculum.isEmpty()) {
-            return "Thiếu tên bộ sách (cột C)";
-        }
 
-        int grade;
-        try {
-            grade = Integer.parseInt(gradeRaw);
-        } catch (NumberFormatException e) {
-            return "Lớp (cột A) phải là số từ 1 đến 12, nhận được: \"" + gradeRaw + "\"";
+        // Revision 2026-09-06: Lớp (cột A) và Bộ sách (cột C) đều trở thành TUỲ CHỌN - để trống cả
+        // hai nghĩa là một "môn học" tổng quát không gắn Lớp/Bộ sách nào (xem LibraryDocument's
+        // javadoc). Chỉ khi CÓ nhập thì mới cần hợp lệ.
+        Integer grade = null;
+        if (!gradeRaw.isEmpty()) {
+            try {
+                grade = Integer.parseInt(gradeRaw);
+            } catch (NumberFormatException e) {
+                return "Lớp (cột A) phải là số từ 1 đến 12, hoặc để trống. Nhận được: \"" + gradeRaw + "\"";
+            }
         }
+        String curriculum = curriculumRaw.isEmpty() ? null : curriculumRaw;
 
         if (!libraryService.isValidTaxonomy(grade, curriculum)) {
-            return "Lớp (cột A) phải từ 1-12 và Bộ sách (cột C) phải có trong danh sách bộ sách hiện có - giá trị nhận được không hợp lệ";
+            return "Lớp (cột A) phải từ 1-12 (hoặc để trống) và Bộ sách (cột C) phải có trong danh sách bộ sách hiện có (hoặc để trống) - giá trị nhận được không hợp lệ";
         }
 
         if (libraryService.existsExact(grade, subjectName, curriculum, volume)) {
-            return "Đã tồn tại sách với Lớp/Môn học/Bộ sách/Tập này";
+            return "Đã tồn tại dòng với Lớp/Môn học/Bộ sách/Tập này";
         }
 
         try {
-            libraryService.createMetadataOnly(grade, subjectName, curriculum,
+            libraryService.create(grade, subjectName, curriculum,
                     volume.isEmpty() ? null : volume, title.isEmpty() ? null : title);
         } catch (BusinessException e) {
             // Defensive only - isValidTaxonomy already checked above, so this should not happen
@@ -240,6 +251,7 @@ public class LibraryImportService extends IBase {
             Sheet sheet = workbook.createSheet("Library");
             writeXlsxRow(sheet, 0, HEADERS);
             writeXlsxRow(sheet, 1, EXAMPLE_ROW);
+            writeXlsxRow(sheet, 2, EXAMPLE_ROW_2);
             workbook.write(out);
             return out.toByteArray();
         } catch (IOException e) {
@@ -259,6 +271,7 @@ public class LibraryImportService extends IBase {
              CSVPrinter printer = new CSVPrinter(new OutputStreamWriter(out, StandardCharsets.UTF_8), CSVFormat.DEFAULT)) {
             printer.printRecord((Object[]) HEADERS);
             printer.printRecord((Object[]) EXAMPLE_ROW);
+            printer.printRecord((Object[]) EXAMPLE_ROW_2);
             printer.flush();
             return out.toByteArray();
         } catch (IOException e) {

@@ -4,25 +4,29 @@ import lombok.Data;
 import vn.org.thn.service.app.quiz.entity.LibraryDocument;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
-/** Safe response view of {@link LibraryDocument} - excludes {@code filePath} (server-internal storage filename, never exposed to clients - the actual file is only reachable through the download endpoints, see {@code LibraryService}'s javadoc). */
+/**
+ * Safe response view of {@link LibraryDocument}. <b>Revision 2026-09-06:</b> {@code grade}/{@code
+ * curriculum} are now nullable (a general "mon hoc" has neither - see the entity's javadoc), and
+ * the single {@code fileSize}/{@code hasFile} pair is replaced by the full {@link #files} list
+ * (a document can carry any number of files now) - {@link #isHasFile()} is kept as a convenience
+ * derived from {@code !files.isEmpty()} so the frontend's existing "has a file yet" status check
+ * needs no rework.
+ */
 @Data
 public class LibraryDocumentResponse {
     private Long id;
-    private int grade;
+    private Integer grade;
     private String subjectName;
     private String curriculum;
     private String volume;
     private String title;
-    private long fileSize;
-    // 2026-09-05 (item 1 of the 11-item batch request) - a row created via bulk import has no
-    // file yet (LibraryService#createMetadataOnly stores filePath="" rather than a nullable
-    // column - see that method's javadoc); the frontend uses this flag to show an "upload PDF"
-    // action for such rows instead of the normal view/download icons.
+    private List<LibraryDocumentFileResponse> files;
     private boolean hasFile;
     private LocalDateTime createdAt;
 
-    public static LibraryDocumentResponse from(LibraryDocument doc) {
+    public static LibraryDocumentResponse from(LibraryDocument doc, List<LibraryDocumentFileResponse> files) {
         LibraryDocumentResponse response = new LibraryDocumentResponse();
         response.id = doc.getId();
         response.grade = doc.getGrade();
@@ -30,8 +34,8 @@ public class LibraryDocumentResponse {
         response.curriculum = doc.getCurriculum();
         response.volume = doc.getVolume();
         response.title = doc.getTitle();
-        response.fileSize = doc.getFileSize();
-        response.hasFile = doc.getFilePath() != null && !doc.getFilePath().isBlank();
+        response.files = files;
+        response.hasFile = !files.isEmpty();
         response.createdAt = doc.getCreatedAt();
         return response;
     }

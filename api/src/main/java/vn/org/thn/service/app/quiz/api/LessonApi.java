@@ -21,6 +21,8 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import vn.org.thn.service.app.quiz.dto.BulkDeleteResponse;
+import vn.org.thn.service.app.quiz.dto.LessonAttachmentFile;
+import vn.org.thn.service.app.quiz.dto.LessonAttachmentResponse;
 import vn.org.thn.service.app.quiz.dto.LessonCreateRequest;
 import vn.org.thn.service.app.quiz.dto.LessonImage;
 import vn.org.thn.service.app.quiz.dto.LessonImportResponse;
@@ -194,6 +196,74 @@ public class LessonApi extends BaseCtl {
     @DeleteMapping("/{id}/image")
     public ResponseEntity<ApiResponse<LessonResponse>> deleteImage(@Parameter(description = "Lesson id") @PathVariable Long id) {
         return ok(lessonService.deleteImage(id));
+    }
+
+    @Operation(
+            summary = "List a lesson's attachments",
+            description = "PDF/PowerPoint lecture files attached to this Lesson, newest first. Only the owning Parent (via the Lesson's Subject) can view them. See StudentLessonApi for the student-facing equivalent."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the lesson's attachments (possibly empty)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This lesson does not belong to the current parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No lesson with this id - COMMON_005 NOT_FOUND")
+    })
+    @GetMapping("/{id}/attachments")
+    public ResponseEntity<ApiResponse<List<LessonAttachmentResponse>>> listAttachments(@Parameter(description = "Lesson id") @PathVariable Long id) {
+        return ok(lessonService.listAttachmentsOwned(id));
+    }
+
+    @Operation(
+            summary = "Add a lecture file to the lesson",
+            description = "PDF or PowerPoint (.ppt/.pptx) only, 50MB max. Does not replace any existing attachment - a Lesson can have any number of them. Only the owning Parent (via the Lesson's Subject) can add one."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Uploaded successfully - returns the new attachment"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Wrong file type - QUIZ_043, or file too large - QUIZ_044"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This lesson does not belong to the current parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No lesson with this id - COMMON_005 NOT_FOUND")
+    })
+    @PostMapping(value = "/{id}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<LessonAttachmentResponse>> addAttachment(
+            @Parameter(description = "Lesson id") @PathVariable Long id,
+            @Parameter(description = "The lecture file - application/pdf, application/vnd.ms-powerpoint or .pptx") @RequestPart MultipartFile file) {
+        return ok(lessonService.addAttachment(id, file));
+    }
+
+    @Operation(
+            summary = "Remove a lesson attachment",
+            description = "Only the owning Parent (via the Lesson's Subject) can remove one."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted successfully - no response body"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This lesson does not belong to the current parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No lesson with this id, or no attachment with this id on this lesson - COMMON_005 NOT_FOUND")
+    })
+    @DeleteMapping("/{id}/attachments/{attachmentId}")
+    public ResponseEntity<ApiResponse<Void>> removeAttachment(
+            @Parameter(description = "Lesson id") @PathVariable Long id,
+            @Parameter(description = "Attachment id") @PathVariable Long attachmentId) {
+        lessonService.removeAttachment(id, attachmentId);
+        return ok();
+    }
+
+    @Operation(
+            summary = "Download a lesson attachment",
+            description = "Only the owning Parent (via the Lesson's Subject) can view it. See StudentLessonApi for the student-facing equivalent."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the file (Content-Type set from its stored type)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This lesson does not belong to the current parent - COMMON_004 FORBIDDEN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No lesson with this id, or no attachment with this id on this lesson - COMMON_005 NOT_FOUND")
+    })
+    @GetMapping("/{id}/attachments/{attachmentId}/file")
+    public ResponseEntity<byte[]> downloadAttachment(
+            @Parameter(description = "Lesson id") @PathVariable Long id,
+            @Parameter(description = "Attachment id") @PathVariable Long attachmentId) {
+        LessonAttachmentFile file = lessonService.downloadAttachmentOwned(id, attachmentId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + file.filename() + "\"")
+                .body(file.content());
     }
 
     @Operation(

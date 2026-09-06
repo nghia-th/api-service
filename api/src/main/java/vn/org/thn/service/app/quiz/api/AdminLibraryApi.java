@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -12,12 +13,14 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import vn.org.thn.service.app.quiz.dto.LibraryDocumentCreateRequest;
+import vn.org.thn.service.app.quiz.dto.LibraryDocumentFileResponse;
 import vn.org.thn.service.app.quiz.dto.LibraryDocumentResponse;
 import vn.org.thn.service.app.quiz.dto.LibraryFile;
 import vn.org.thn.service.app.quiz.dto.LibraryImportResponse;
@@ -31,12 +34,12 @@ import vn.org.thn.service.base.response.ApiResponse;
 import java.util.List;
 
 /**
- * Admin management of the textbook PDF library (2026-09-05, "thu vien sach giao khoa" feature) -
- * full CRUD, no root restriction (unlike {@code AdminManageApi}'s Admin-manages-Admin feature,
- * every Admin can manage textbooks). See {@link LibraryService}'s javadoc for the full 3-role
- * access model. Behind {@link JwtAuthFilter} under {@code /api/admin/*}.
+ * Admin management of the library (2026-09-05, "thu vien sach giao khoa" feature; extended
+ * 2026-09-06 to also cover general "mon hoc" entries with no grade/curriculum and multiple files
+ * per entry - see {@link LibraryService}'s javadoc) - full CRUD, no root restriction. Behind
+ * {@link JwtAuthFilter} under {@code /api/admin/*}.
  */
-@Tag(name = "Admin - Library", description = "Admin CRUD for the textbook PDF library")
+@Tag(name = "Admin - Library", description = "Admin CRUD for the library (textbooks and general courses), and per-entry file management")
 @RestController
 @RequestMapping("/api/admin/library")
 public class AdminLibraryApi extends BaseCtl {
@@ -48,11 +51,11 @@ public class AdminLibraryApi extends BaseCtl {
     private LibraryImportService libraryImportService;
 
     @Operation(
-            summary = "List/search library documents",
+            summary = "List/search library entries",
             description = "Every filter is optional and AND-combined: grade (exact), subjectName (partial match), curriculum (exact, one of the Admin-managed curriculum list - see /api/admin/curricula)."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Matching library documents")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Matching library entries, each with its file list")
     })
     @GetMapping
     public ResponseEntity<ApiResponse<List<LibraryDocumentResponse>>> list(
@@ -63,49 +66,77 @@ public class AdminLibraryApi extends BaseCtl {
     }
 
     @Operation(
-            summary = "Upload a new textbook PDF",
-            description = "grade must be 1-12 and curriculum must be a known name from /api/admin/curricula - otherwise QUIZ_032. PDF only, 50MB max. title is optional (a default is generated from subjectName/grade/volume/curriculum when left blank)."
+            summary = "Create a new library entry",
+            description = "grade/curriculum are both optional - a general course not tied to any grade/curriculum (e.g. \"Lap trinh Python\") leaves both out. When provided, grade must be 1-12 and curriculum must be a known name from /api/admin/curricula - otherwise QUIZ_032. No file here - add files afterward via POST /{id}/files, any number of them."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Uploaded successfully - returns the new library document"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Invalid grade/curriculum - QUIZ_032, wrong file type - QUIZ_033, or file too large - QUIZ_034")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Created successfully - returns the new entry (files=[])"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Invalid grade/curriculum - QUIZ_032, or subjectName missing - COMMON_001")
     })
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ApiResponse<LibraryDocumentResponse>> upload(
-            @Parameter(description = "Grade 1-12") @RequestParam int grade,
-            @Parameter(description = "Subject name, e.g. \"Toan\"") @RequestParam String subjectName,
-            @Parameter(description = "Curriculum - one of the fixed 3-value list") @RequestParam String curriculum,
-            @Parameter(description = "Volume, e.g. \"Tap 1\" - optional") @RequestParam(required = false) String volume,
-            @Parameter(description = "Display title - optional, a default is generated when left blank") @RequestParam(required = false) String title,
-            @Parameter(description = "The PDF file") @RequestPart MultipartFile file) {
-        return ok(libraryService.upload(grade, subjectName, curriculum, volume, title, file));
+    @PostMapping
+    public ResponseEntity<ApiResponse<LibraryDocumentResponse>> create(@Valid @RequestBody LibraryDocumentCreateRequest request) {
+        return ok(libraryService.create(request.getGrade(), request.getSubjectName(), request.getCurriculum(), request.getVolume(), request.getTitle()));
     }
 
     @Operation(
-            summary = "Delete a library document",
-            description = "Also deletes its PDF file and every Subject's link to it (cascade)."
+            summary = "Delete a library entry",
+            description = "Also deletes every one of its files and every Subject's link to it (cascade)."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted successfully - no response body"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No library document with this id - COMMON_005 NOT_FOUND")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No library entry with this id - COMMON_005 NOT_FOUND")
     })
     @DeleteMapping("/{id}")
-    public ResponseEntity<ApiResponse<Void>> delete(@Parameter(description = "Library document id") @PathVariable Long id) {
+    public ResponseEntity<ApiResponse<Void>> delete(@Parameter(description = "Library entry id") @PathVariable Long id) {
         libraryService.delete(id);
         return ok();
     }
 
     @Operation(
-            summary = "View/download a library document's PDF",
+            summary = "Add a file to a library entry",
+            description = "PDF or PowerPoint (.ppt/.pptx), 50MB max. Never replaces an existing file - a document can now carry any number of them (revision 2026-09-06); remove one explicitly via DELETE /{id}/files/{fileId} first if replacing."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Added successfully - returns the new file's metadata"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Wrong file type - QUIZ_033, or file too large - QUIZ_034"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No library entry with this id - COMMON_005 NOT_FOUND")
+    })
+    @PostMapping(value = "/{id}/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<LibraryDocumentFileResponse>> addFile(
+            @Parameter(description = "Library entry id") @PathVariable Long id,
+            @Parameter(description = "The PDF or PowerPoint file") @RequestPart MultipartFile file) {
+        return ok(libraryService.addFile(id, file));
+    }
+
+    @Operation(
+            summary = "Remove a file from a library entry",
+            description = "Deletes just this one file - the entry and its other files are untouched."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Removed successfully - no response body"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No such file on this library entry - COMMON_005 NOT_FOUND")
+    })
+    @DeleteMapping("/{id}/files/{fileId}")
+    public ResponseEntity<ApiResponse<Void>> removeFile(
+            @Parameter(description = "Library entry id") @PathVariable Long id,
+            @Parameter(description = "File id") @PathVariable Long fileId) {
+        libraryService.removeFile(id, fileId);
+        return ok();
+    }
+
+    @Operation(
+            summary = "View/download one of a library entry's files",
             description = "Admin has full access to the whole library, no ownership check (see LibraryService's javadoc)."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the PDF file"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No library document with this id - COMMON_005 NOT_FOUND")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the file"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No such file on this library entry - COMMON_005 NOT_FOUND")
     })
-    @GetMapping("/{id}/file")
-    public ResponseEntity<byte[]> file(@Parameter(description = "Library document id") @PathVariable Long id) {
-        LibraryFile file = libraryService.downloadForAdmin(id);
+    @GetMapping("/{id}/files/{fileId}")
+    public ResponseEntity<byte[]> file(
+            @Parameter(description = "Library entry id") @PathVariable Long id,
+            @Parameter(description = "File id") @PathVariable Long fileId) {
+        LibraryFile file = libraryService.downloadForAdmin(id, fileId);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(file.contentType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + file.filename() + "\"")
@@ -114,7 +145,7 @@ public class AdminLibraryApi extends BaseCtl {
 
     @Operation(
             summary = "Download the library import template",
-            description = "Returns a ready-to-fill Excel (default) or CSV file with the fixed 5-column layout (Lop/Mon hoc/Bo sach/Tap/Tieu de) plus one illustrative example row, which the import endpoint recognizes and skips automatically whether or not it is deleted before uploading."
+            description = "Returns a ready-to-fill Excel (default) or CSV file with the fixed 5-column layout (Lop/Mon hoc/Bo sach/Tap/Tieu de - Lop and Bo sach are optional) plus 2 illustrative example rows, which the import endpoint recognizes and skips automatically whether or not they are deleted before uploading."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Returns the template file (Content-Type set per the requested format)")
@@ -130,8 +161,8 @@ public class AdminLibraryApi extends BaseCtl {
     }
 
     @Operation(
-            summary = "Bulk-import library documents (metadata only) from an Excel/CSV file",
-            description = "Best-effort per row - one bad row does not stop the others in the same file. Every row creates a metadata-only document (no PDF yet, see LibraryService#createMetadataOnly) - upload each row's actual PDF afterward via PUT /{id}/file. A row that exactly duplicates an existing grade+subjectName+curriculum+volume combination is reported as an error and skipped."
+            summary = "Bulk-import library entries (metadata only) from an Excel/CSV file",
+            description = "Best-effort per row - one bad row does not stop the others in the same file. Every row creates an entry with no files yet - add each row's file(s) afterward via POST /{id}/files. Lop/Bo sach columns may be left blank for a general course entry. A row that exactly duplicates an existing grade+subjectName+curriculum+volume combination is reported as an error and skipped."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "File was read - check the response body for per-row errors, if any (this is 200 even when some/all rows failed, since the request itself succeeded)"),
@@ -141,21 +172,5 @@ public class AdminLibraryApi extends BaseCtl {
     public ResponseEntity<ApiResponse<LibraryImportResponse>> importFile(
             @Parameter(description = "The .xlsx or .csv file, filled in from the downloaded template") @RequestPart MultipartFile file) {
         return ok(libraryImportService.importFile(file));
-    }
-
-    @Operation(
-            summary = "Attach (or replace) a library document's PDF file",
-            description = "Used to upload the actual PDF for a metadata-only row created via import (LibraryDocumentResponse#hasFile is false), but also works as a general \"replace the PDF\" action for a row that already has one - the old file (if any) is deleted from disk first."
-    )
-    @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Attached successfully - returns the updated library document (hasFile=true)"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Wrong file type - QUIZ_033, or file too large - QUIZ_034"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No library document with this id - COMMON_005 NOT_FOUND")
-    })
-    @PutMapping(value = "/{id}/file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ApiResponse<LibraryDocumentResponse>> attachFile(
-            @Parameter(description = "Library document id") @PathVariable Long id,
-            @Parameter(description = "The PDF file") @RequestPart MultipartFile file) {
-        return ok(libraryService.attachFile(id, file));
     }
 }

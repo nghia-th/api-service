@@ -14,11 +14,13 @@ import vn.org.thn.service.app.quiz.entity.AttemptAnswer;
 import vn.org.thn.service.app.quiz.entity.Choice;
 import vn.org.thn.service.app.quiz.entity.Classroom;
 import vn.org.thn.service.app.quiz.entity.Lesson;
+import vn.org.thn.service.app.quiz.entity.LessonAttachment;
 import vn.org.thn.service.app.quiz.entity.Parent;
 import vn.org.thn.service.app.quiz.entity.Question;
 import vn.org.thn.service.app.quiz.entity.RefreshToken;
 import vn.org.thn.service.app.quiz.entity.Student;
 import vn.org.thn.service.app.quiz.entity.Subject;
+import vn.org.thn.service.app.quiz.entity.SubjectLibraryLink;
 import vn.org.thn.service.app.quiz.entity.Test;
 import vn.org.thn.service.app.quiz.entity.TestQuestion;
 import vn.org.thn.service.app.quiz.exception.QuizErrorCode;
@@ -26,11 +28,13 @@ import vn.org.thn.service.app.quiz.repository.AttemptAnswerRepository;
 import vn.org.thn.service.app.quiz.repository.AttemptRepository;
 import vn.org.thn.service.app.quiz.repository.ChoiceRepository;
 import vn.org.thn.service.app.quiz.repository.ClassroomRepository;
+import vn.org.thn.service.app.quiz.repository.LessonAttachmentRepository;
 import vn.org.thn.service.app.quiz.repository.LessonRepository;
 import vn.org.thn.service.app.quiz.repository.ParentRepository;
 import vn.org.thn.service.app.quiz.repository.QuestionRepository;
 import vn.org.thn.service.app.quiz.repository.RefreshTokenRepository;
 import vn.org.thn.service.app.quiz.repository.StudentRepository;
+import vn.org.thn.service.app.quiz.repository.SubjectLibraryLinkRepository;
 import vn.org.thn.service.app.quiz.repository.SubjectRepository;
 import vn.org.thn.service.app.quiz.repository.TestQuestionRepository;
 import vn.org.thn.service.app.quiz.repository.TestRepository;
@@ -114,6 +118,12 @@ public class AdminParentService extends IBase {
 
     @Autowired
     private RefreshTokenRepository refreshTokenRepository;
+
+    @Autowired
+    private LessonAttachmentRepository lessonAttachmentRepository;
+
+    @Autowired
+    private SubjectLibraryLinkRepository subjectLibraryLinkRepository;
 
     @Autowired
     private AuthService authService;
@@ -270,8 +280,24 @@ public class AdminParentService extends IBase {
         if (!lessonIds.isEmpty()) {
             questionRepository.delete().in(Question::getLessonId, lessonIds).execute();
         }
+        if (!lessonIds.isEmpty()) {
+            // Added 2026-09-06 alongside the new lesson_attachment table (FK -> lesson(id)) - not
+            // cleaning this up first would violate that foreign key on every dialect but SQLite.
+            // Same as the rest of this method, only the rows are removed here - the attachment
+            // files themselves are left on disk, matching this method's existing convention of
+            // not cleaning up lesson image / question audio / question video files either.
+            lessonAttachmentRepository.delete().in(LessonAttachment::getLessonId, lessonIds).execute();
+        }
         if (!subjectIds.isEmpty()) {
             lessonRepository.delete().in(Lesson::getSubjectId, subjectIds).execute();
+        }
+        if (!subjectIds.isEmpty()) {
+            // Added 2026-09-06: pre-existing gap fixed opportunistically while already touching
+            // this method for lesson_attachment above - a Subject with any SubjectLibraryLink row
+            // would otherwise violate fk_subject_library_link_subject on every dialect but
+            // SQLite. Only the link row is removed - the linked LibraryDocument itself is
+            // Admin-owned content, never touched, same rule as CascadeDeleteService#deleteSubjectCascade.
+            subjectLibraryLinkRepository.delete().in(SubjectLibraryLink::getSubjectId, subjectIds).execute();
         }
         if (!subjectIds.isEmpty()) {
             // Revision 2026-09-06 (c): deleted by id (collected via parentId above), not by

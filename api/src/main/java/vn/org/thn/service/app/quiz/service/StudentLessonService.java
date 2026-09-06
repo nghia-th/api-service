@@ -2,6 +2,8 @@ package vn.org.thn.service.app.quiz.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import vn.org.thn.service.app.quiz.dto.LessonAttachmentFile;
+import vn.org.thn.service.app.quiz.dto.LessonAttachmentResponse;
 import vn.org.thn.service.app.quiz.dto.LessonImage;
 import vn.org.thn.service.app.quiz.dto.StudentLessonResponse;
 import vn.org.thn.service.app.quiz.entity.Lesson;
@@ -66,6 +68,20 @@ public class StudentLessonService extends IBase {
         Lesson lesson = lessonService.getById(lessonId);
         assertAccessible(lesson.getId(), studentId);
         return lessonService.loadImage(lesson);
+    }
+
+    public List<LessonAttachmentResponse> listAttachments(Long lessonId) {
+        Long studentId = CurrentUser.get().userId();
+        Lesson lesson = lessonService.getById(lessonId);
+        assertAccessible(lesson.getId(), studentId);
+        return lessonService.listAttachments(lesson.getId());
+    }
+
+    public LessonAttachmentFile downloadAttachment(Long lessonId, Long attachmentId) {
+        Long studentId = CurrentUser.get().userId();
+        Lesson lesson = lessonService.getById(lessonId);
+        assertAccessible(lesson.getId(), studentId);
+        return lessonService.loadAttachmentFile(lessonService.getAttachmentOrThrow(lesson.getId(), attachmentId));
     }
 
     /** Throws {@code COMMON_004 FORBIDDEN} unless some Test assigned to {@code studentId} was built from a Question belonging to {@code lessonId}. */
