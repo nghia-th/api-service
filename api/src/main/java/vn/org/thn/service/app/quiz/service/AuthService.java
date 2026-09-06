@@ -13,6 +13,10 @@ import vn.org.thn.service.app.quiz.dto.ParentLoginRequest;
 import vn.org.thn.service.app.quiz.dto.ParentRegisterRequest;
 import vn.org.thn.service.app.quiz.dto.ParentResponse;
 import vn.org.thn.service.app.quiz.dto.StudentAuthResponse;
+import vn.org.thn.service.app.quiz.dto.StudentFamilyLookupRequest;
+import vn.org.thn.service.app.quiz.dto.StudentFamilyLookupResponse;
+import vn.org.thn.service.app.quiz.dto.StudentFamilyMember;
+import vn.org.thn.service.app.quiz.dto.StudentLoginByIdRequest;
 import vn.org.thn.service.app.quiz.dto.StudentLoginRequest;
 import vn.org.thn.service.app.quiz.dto.StudentResponse;
 import vn.org.thn.service.app.quiz.dto.TokenPairResponse;
@@ -170,6 +174,57 @@ public class AuthService extends IBase {
         if (student == null || !passwordEncoder.matches(request.getPassword(), student.getPassword())) {
             throw new BusinessException(QuizErrorCode.INVALID_CREDENTIALS);
         }
+        return doLoginStudent(student);
+    }
+
+    /**
+     * "Which family is this?" step of the 2026-09-06 login redesign (see {@code Login.tsx}/
+     * {@code StudentLogin.tsx} for the full frontend flow this backs) - looks up the owning
+     * {@link Parent} by the SAME identifier {@link #loginParent} accepts (email/username/phone),
+     * then returns just that Parent's Students' id+fullName, nothing else. Deliberately returns
+     * an EMPTY list rather than throwing, whether {@code parentIdentifier} matches no Parent at
+     * all or matches a Parent with zero Students - this is an UNAUTHENTICATED endpoint (no
+     * password involved at this step at all), so it must never let a caller distinguish "no such
+     * account" from "account has no children", same "one shared outcome, never reveal which"
+     * philosophy as every login method in this class. Does NOT check {@link Parent#isActive()} -
+     * a deactivated Parent's family can still be looked up here (picking a name is not itself an
+     * authentication event); {@link #loginStudentById} still correctly rejects the actual login
+     * attempt afterward, exactly like {@link #loginStudent} defers its own active-check until
+     * after the password is verified (see {@link #doLoginStudent}).
+     */
+    public StudentFamilyLookupResponse lookupStudentFamily(StudentFamilyLookupRequest request) {
+        Parent parent = parentRepository.query()
+                .eq(Parent::getEmail, request.getParentIdentifier())
+                .orEq(Parent::getUsername, request.getParentIdentifier())
+                .orEq(Parent::getPhone, request.getParentIdentifier())
+                .one();
+        if (parent == null) {
+            return new StudentFamilyLookupResponse(List.of());
+        }
+        List<StudentFamilyMember> members = studentRepository.query().eq(Student::getParentId, parent.getId()).list()
+                .stream().map(s -> new StudentFamilyMember(s.getId(), s.getFullName())).toList();
+        return new StudentFamilyLookupResponse(members);
+    }
+
+    /**
+     * Final step of the 2026-09-06 login redesign - same as {@link #loginStudent} but keyed by
+     * the numeric {@code studentId} returned from {@link #lookupStudentFamily} instead of typing
+     * a username, so a Student picking their name from a list never has to type/reveal a
+     * username on a shared family device (the actual point of the redesign - a text field for
+     * typing a username can get an autofill suggestion for the PARENT's saved password; a name
+     * picked from a list cannot). {@link #loginStudent} (username-based) is UNCHANGED and kept
+     * working as a manual fallback.
+     */
+    public StudentAuthResponse loginStudentById(StudentLoginByIdRequest request) {
+        Student student = studentRepository.findById(request.getStudentId());
+        if (student == null || !passwordEncoder.matches(request.getPassword(), student.getPassword())) {
+            throw new BusinessException(QuizErrorCode.INVALID_CREDENTIALS);
+        }
+        return doLoginStudent(student);
+    }
+
+    /** Shared by {@link #loginStudent}/{@link #loginStudentById} once the right {@link Student} row and matching password are already confirmed - the active-check + token issuance is identical either way. */
+    private StudentAuthResponse doLoginStudent(Student student) {
         // A Student has no active flag of its own - it inherits the owning Parent's, since a
         // Parent is the tenant boundary (deactivating a Parent locks out their Students too).
         Parent owningParent = parentRepository.findById(student.getParentId());

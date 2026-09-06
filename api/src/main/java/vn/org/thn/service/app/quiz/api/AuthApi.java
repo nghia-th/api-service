@@ -17,6 +17,9 @@ import vn.org.thn.service.app.quiz.dto.ParentLoginRequest;
 import vn.org.thn.service.app.quiz.dto.ParentRegisterRequest;
 import vn.org.thn.service.app.quiz.dto.RefreshTokenRequest;
 import vn.org.thn.service.app.quiz.dto.StudentAuthResponse;
+import vn.org.thn.service.app.quiz.dto.StudentFamilyLookupRequest;
+import vn.org.thn.service.app.quiz.dto.StudentFamilyLookupResponse;
+import vn.org.thn.service.app.quiz.dto.StudentLoginByIdRequest;
 import vn.org.thn.service.app.quiz.dto.StudentLoginRequest;
 import vn.org.thn.service.app.quiz.dto.TokenPairResponse;
 import vn.org.thn.service.app.quiz.security.JwtAuthFilter;
@@ -98,6 +101,34 @@ public class AuthApi extends BaseCtl {
     @PostMapping("/student/login")
     public ResponseEntity<ApiResponse<StudentAuthResponse>> loginStudent(@Valid @RequestBody StudentLoginRequest request) {
         return ok(authService.loginStudent(request));
+    }
+
+    @Operation(
+            summary = "Look up a family's students (login redesign, 2026-09-06)",
+            description = "First step of the new Student login flow - given the owning Parent's email/username/phone (same identifier Parent login accepts), returns just that Parent's Students (id+fullName only, nothing else). ALWAYS returns 200 with a (possibly empty) list - never reveals whether parentIdentifier matched anything, same anti-enumeration reasoning as every login endpoint here. No password/token involved at this step."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Always succeeds - students is empty if parentIdentifier matched nothing, or matched a Parent with no children"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "parentIdentifier missing - COMMON_001")
+    })
+    @PostMapping("/student/family")
+    public ResponseEntity<ApiResponse<StudentFamilyLookupResponse>> lookupStudentFamily(@Valid @RequestBody StudentFamilyLookupRequest request) {
+        return ok(authService.lookupStudentFamily(request));
+    }
+
+    @Operation(
+            summary = "Student login by id (login redesign, 2026-09-06)",
+            description = "Same as POST /student/login but keyed by studentId (from POST /student/family) instead of typing a username - lets a Student log in by picking their own name from a list rather than typing a username into a text field on a shared family device (where a browser could otherwise offer to autofill the Parent's own saved password into that field). The original username-based login above is unchanged and still works as a manual fallback."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Logged in successfully - returns a token plus the Student's info"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "studentId/password missing - COMMON_001"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "No such student or wrong password - one shared error - QUIZ_004 INVALID_CREDENTIALS"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "The owning Parent's account has been deactivated by an administrator - QUIZ_027 ACCOUNT_DEACTIVATED")
+    })
+    @PostMapping("/student/login-by-id")
+    public ResponseEntity<ApiResponse<StudentAuthResponse>> loginStudentById(@Valid @RequestBody StudentLoginByIdRequest request) {
+        return ok(authService.loginStudentById(request));
     }
 
     @Operation(
