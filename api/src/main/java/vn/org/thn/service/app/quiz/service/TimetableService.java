@@ -151,9 +151,8 @@ public class TimetableService extends IBase {
      * Loads {@code subjectId}, throwing if it doesn't exist or does not belong to {@code
      * classroomId} - deliberately does NOT reuse {@code SubjectService}'s own ownership check
      * (that only checks "belongs to the current Parent", i.e. ANY of their classrooms) because a
-     * Subject from the Student's OTHER... (a Student has exactly one Classroom, but the Parent's
-     * OTHER Classroom's Subjects) must still be rejected here (a Student's timetable can only
-     * reference Subjects taught in that Student's own Classroom).
+     * Subject from the Parent's OTHER Classroom must still be rejected here (a Student's
+     * timetable can only reference Subjects taught in that Student's own Classroom).
      */
     private Subject getSubjectInClassroomOrThrow(Long subjectId, Long classroomId) {
         Subject subject = subjectRepository.findById(subjectId);

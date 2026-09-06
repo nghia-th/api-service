@@ -41,6 +41,13 @@ import java.util.stream.Collectors;
  * reports can be undone; a Lesson reported on any date is hidden from the picker forever
  * (enforced by the DB's unique (studentId, lessonId) constraint - see {@link LessonReport}'s
  * javadoc).
+ * <p>
+ * <b>Revision 2026-09-06 (b):</b> {@code TimetableEntry} moved from per-Classroom to per-Student
+ * (see its javadoc) - the "is this Subject on today's timetable" check now calls {@code
+ * TimetableService#getForStudentAndDate} with the Student's own id directly instead of {@code
+ * getForClassroomAndDate(student.getClassroomId(), ...)}. The Lesson->Subject->Classroom
+ * ownership check in {@link #getLessonInClassroomOrThrow} is unaffected (Lesson/Subject are still
+ * Classroom-scoped - only the Timetable moved to Student-scoped).
  */
 @Service
 public class LessonReportService extends IBase {
@@ -68,8 +75,7 @@ public class LessonReportService extends IBase {
     /** Today's timetable Subjects for the current Student, each with what has already been reported today and what is still pickable. */
     public List<SubjectLessonReportStatus> getMyTodayStatus() {
         Long studentId = CurrentUser.get().userId();
-        Student student = getStudentOrThrow(studentId);
-        return buildTodayStatus(student, studentId);
+        return buildTodayStatus(studentId);
     }
 
     /**
@@ -87,7 +93,7 @@ public class LessonReportService extends IBase {
         Lesson lesson = getLessonInClassroomOrThrow(lessonId, student.getClassroomId());
 
         LocalDate today = LocalDate.now();
-        boolean subjectScheduledToday = timetableService.getForClassroomAndDate(student.getClassroomId(), today)
+        boolean subjectScheduledToday = timetableService.getForStudentAndDate(studentId, today)
                 .stream().anyMatch(entry -> entry.getSubjectId().equals(lesson.getSubjectId()));
         if (!subjectScheduledToday) {
             throw new BusinessException(QuizErrorCode.LESSON_REPORT_SUBJECT_NOT_TODAY);
@@ -113,7 +119,7 @@ public class LessonReportService extends IBase {
         lessonReportRepository.save(row);
 
         logInfo("Lesson reported: studentId={}, lessonId={}, date={}", studentId, lessonId, today);
-        return buildTodayStatus(student, studentId);
+        return buildTodayStatus(studentId);
     }
 
     /**
@@ -125,7 +131,6 @@ public class LessonReportService extends IBase {
     @Transactional
     public List<SubjectLessonReportStatus> unreportLesson(Long lessonId) {
         Long studentId = CurrentUser.get().userId();
-        Student student = getStudentOrThrow(studentId);
 
         LessonReport row = lessonReportRepository.query()
                 .eq(LessonReport::getStudentId, studentId)
@@ -138,12 +143,12 @@ public class LessonReportService extends IBase {
             lessonReportRepository.delete().eq(LessonReport::getId, row.getId()).execute();
             logInfo("Lesson report undone: studentId={}, lessonId={}", studentId, lessonId);
         }
-        return buildTodayStatus(student, studentId);
+        return buildTodayStatus(studentId);
     }
 
-    private List<SubjectLessonReportStatus> buildTodayStatus(Student student, Long studentId) {
+    private List<SubjectLessonReportStatus> buildTodayStatus(Long studentId) {
         LocalDate today = LocalDate.now();
-        List<TimetableEntryResponse> todaySubjects = timetableService.getForClassroomAndDate(student.getClassroomId(), today);
+        List<TimetableEntryResponse> todaySubjects = timetableService.getForStudentAndDate(studentId, today);
 
         List<LessonReport> myReports = lessonReportRepository.query()
                 .eq(LessonReport::getStudentId, studentId)
