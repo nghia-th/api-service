@@ -56,7 +56,13 @@ public class StudentLibraryService extends IBase {
     private void assertAccessible(Long subjectId, Long studentId) {
         Subject subject = subjectService.getById(subjectId);
         Student student = studentRepository.findById(studentId);
-        if (student == null || !student.getClassroomId().equals(subject.getClassroomId())) {
+        // Revision 2026-09-06 (c): a SHARED Subject (classroomId == null) is accessible from
+        // every Classroom of its own Parent, this Student's classroom included - see Subject's
+        // javadoc. A shared Subject still carries its owning parentId, so that check still guards
+        // against a Student reaching another Parent's shared Subject.
+        boolean accessible = student != null && subject.getParentId().equals(student.getParentId())
+                && (subject.getClassroomId() == null || subject.getClassroomId().equals(student.getClassroomId()));
+        if (!accessible) {
             throw new BusinessException(CommonErrorCode.FORBIDDEN, "Subject is not accessible");
         }
     }

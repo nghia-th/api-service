@@ -173,7 +173,9 @@ public class TestService extends IBase {
         for (Long lessonId : request.getLessonIds()) {
             Lesson lesson = lessonService.getOwnedOrThrow(lessonId, parentId);
             Subject subject = subjectService.getById(lesson.getSubjectId());
-            if (!subject.getClassroomId().equals(student.getClassroomId())) {
+            // Revision 2026-09-06 (c): a SHARED Subject (classroomId == null) belongs to every
+            // Classroom of its Parent, this Student's classroom included - see Subject's javadoc.
+            if (subject.getClassroomId() != null && !subject.getClassroomId().equals(student.getClassroomId())) {
                 throw new BusinessException(CommonErrorCode.FORBIDDEN, "This lesson is not in the student's classroom");
             }
             allowedQuestionIds.addAll(questionRepository.query().eq(Question::getLessonId, lessonId).list()
@@ -295,7 +297,9 @@ public class TestService extends IBase {
         Long parentId = CurrentUser.get().userId();
         Student student = studentService.getOwnedOrThrow(request.getStudentId(), parentId);
         Subject subject = subjectService.getOwnedOrThrow(request.getSubjectId(), parentId);
-        if (!subject.getClassroomId().equals(student.getClassroomId())) {
+        // Revision 2026-09-06 (c): a SHARED Subject (classroomId == null) belongs to every
+        // Classroom of its Parent, this Student's classroom included - see Subject's javadoc.
+        if (subject.getClassroomId() != null && !subject.getClassroomId().equals(student.getClassroomId())) {
             throw new BusinessException(CommonErrorCode.FORBIDDEN, "This subject is not in the student's classroom");
         }
         return doGeneratePractice(parentId, student.getId(), subject, request.getName(), request.getQuestionCount(), "parent:" + parentId);
@@ -316,7 +320,9 @@ public class TestService extends IBase {
             throw new BusinessException(CommonErrorCode.NOT_FOUND, "Student not found");
         }
         Subject subject = subjectService.getOwnedOrThrow(subjectId, student.getParentId());
-        if (!subject.getClassroomId().equals(student.getClassroomId())) {
+        // Revision 2026-09-06 (c): a SHARED Subject (classroomId == null) belongs to every
+        // Classroom of its Parent, this Student's classroom included - see Subject's javadoc.
+        if (subject.getClassroomId() != null && !subject.getClassroomId().equals(student.getClassroomId())) {
             throw new BusinessException(CommonErrorCode.FORBIDDEN, "This subject is not in your classroom");
         }
         return doGeneratePractice(student.getParentId(), student.getId(), subject, name, questionCount, "student:" + studentId);

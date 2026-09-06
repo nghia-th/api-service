@@ -231,7 +231,11 @@ public class LessonReportService extends IBase {
             throw new BusinessException(CommonErrorCode.NOT_FOUND, "Lesson not found");
         }
         Subject subject = subjectRepository.findById(lesson.getSubjectId());
-        if (subject == null || !subject.getClassroomId().equals(classroomId)) {
+        // Revision 2026-09-06 (c): a SHARED Subject (classroomId == null) belongs to every
+        // Classroom of its Parent, this one included - see Subject's javadoc.
+        boolean inThisClassroom = subject != null
+                && (subject.getClassroomId() == null || subject.getClassroomId().equals(classroomId));
+        if (!inThisClassroom) {
             throw new BusinessException(CommonErrorCode.INVALID_PARAMETER,
                     "lessonId " + lessonId + " does not belong to a subject in this classroom");
         }

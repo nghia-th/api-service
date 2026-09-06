@@ -184,7 +184,9 @@ public class PracticeImportService extends IBase {
         // THAT Subject's own Classroom, matching TestService#generatePractice's own "Subject must
         // be in the Student's Classroom" rule, so a row can never resolve a Student that call
         // would reject anyway.
-        if (!subject.getClassroomId().equals(student.getClassroomId())) {
+        // Revision 2026-09-06 (c): a SHARED Subject (classroomId == null) belongs to every
+        // Classroom of its Parent, this Student's classroom included - see Subject's javadoc.
+        if (subject.getClassroomId() != null && !subject.getClassroomId().equals(student.getClassroomId())) {
             return "Học sinh \"" + username + "\" không thuộc lớp có môn học này";
         }
 

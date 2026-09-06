@@ -235,9 +235,13 @@ public class AdminParentService extends IBase {
         List<Long> studentIds = studentIdsOf(parentId);
         List<Long> classroomIds = classroomRepository.query().eq(Classroom::getParentId, parentId).list()
                 .stream().map(Classroom::getId).toList();
-        List<Long> subjectIds = classroomIds.isEmpty() ? List.of()
-                : subjectRepository.query().in(Subject::getClassroomId, classroomIds).list()
-                        .stream().map(Subject::getId).toList();
+        // Revision 2026-09-06 (c): collected by the Subject's own direct parentId column now,
+        // not by classroomIds - a SHARED Subject (classroomId == null) would otherwise never be
+        // collected here (it matches no classroomId) and would be orphaned, along with every
+        // Lesson/Question under it, once this Parent and its Classrooms are gone. See Subject's
+        // javadoc.
+        List<Long> subjectIds = subjectRepository.query().eq(Subject::getParentId, parentId).list()
+                .stream().map(Subject::getId).toList();
         List<Long> lessonIds = subjectIds.isEmpty() ? List.of()
                 : lessonRepository.query().in(Lesson::getSubjectId, subjectIds).list()
                         .stream().map(Lesson::getId).toList();
@@ -269,8 +273,10 @@ public class AdminParentService extends IBase {
         if (!subjectIds.isEmpty()) {
             lessonRepository.delete().in(Lesson::getSubjectId, subjectIds).execute();
         }
-        if (!classroomIds.isEmpty()) {
-            subjectRepository.delete().in(Subject::getClassroomId, classroomIds).execute();
+        if (!subjectIds.isEmpty()) {
+            // Revision 2026-09-06 (c): deleted by id (collected via parentId above), not by
+            // classroomIds, for the same "don't orphan a SHARED Subject" reason.
+            subjectRepository.delete().in(Subject::getId, subjectIds).execute();
         }
         classroomRepository.delete().eq(Classroom::getParentId, parentId).execute();
         refreshTokenRepository.delete().eq(RefreshToken::getUserId, parentId).eq(RefreshToken::getRole, Role.PARENT.name()).execute();

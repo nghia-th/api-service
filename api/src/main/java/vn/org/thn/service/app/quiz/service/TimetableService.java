@@ -228,7 +228,10 @@ public class TimetableService extends IBase {
         if (subject == null) {
             throw new BusinessException(CommonErrorCode.NOT_FOUND, "Subject not found");
         }
-        if (!subject.getClassroomId().equals(classroomId)) {
+        // Revision 2026-09-06 (c): a SHARED Subject (classroomId == null) belongs to every
+        // Classroom of its Parent, this one included - see Subject's javadoc.
+        boolean inThisClassroom = subject.getClassroomId() == null || subject.getClassroomId().equals(classroomId);
+        if (!inThisClassroom) {
             throw new BusinessException(CommonErrorCode.INVALID_PARAMETER,
                     "subjectId " + subjectId + " does not belong to this student's classroom");
         }

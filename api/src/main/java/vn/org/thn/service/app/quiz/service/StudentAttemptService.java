@@ -240,14 +240,24 @@ public class StudentAttemptService extends IBase {
                 byKnowledgeTag);
     }
 
-    /** Every Subject in the current Student's own Classroom - populates the "chọn Môn" dropdown for {@link #generatePractice}, the Student never picks a Classroom (they only ever have the one). */
+    /**
+     * Every Subject in the current Student's own Classroom, PLUS every SHARED Subject of their
+     * Parent (Revision 2026-09-06 (c), {@code classroomId == null} means "every Classroom of
+     * this Parent" - see {@code Subject}'s javadoc) - populates the "chọn Môn" dropdown for
+     * {@link #generatePractice}, the Student never picks a Classroom (they only ever have the
+     * one). The OR is kept inside its own parenthesized {@code raw()} fragment for the same
+     * grouping reason documented on {@code SubjectService#list}.
+     */
     public List<SubjectResponse> listSubjects() {
         Long studentId = CurrentUser.get().userId();
         Student student = studentRepository.findById(studentId);
         if (student == null) {
             throw new BusinessException(CommonErrorCode.NOT_FOUND, "Student not found");
         }
-        return subjectRepository.query().eq(Subject::getClassroomId, student.getClassroomId()).list().stream()
+        return subjectRepository.query()
+                .eq(Subject::getParentId, student.getParentId())
+                .raw("(classroom_id = #{cid} OR classroom_id IS NULL)", java.util.Map.of("cid", student.getClassroomId()))
+                .list().stream()
                 .map(SubjectResponse::from).toList();
     }
 
