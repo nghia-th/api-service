@@ -226,6 +226,32 @@ public class CascadeDeleteService extends IBase {
         logInfo("Cascade-deleted subject id={}, {} lesson(s) under it", subjectId, lessonIds.size());
     }
 
+    /**
+     * Deletes every {@link TimetableEntry} and {@link LessonPreparation} row belonging to {@code
+     * studentId} (2026-09-06, revision (b) of {@code TimetableEntry} - see its javadoc). Added
+     * specifically because {@code timetable_entry} just gained a {@code student_id NOT NULL
+     * REFERENCES student(id)} foreign key (V7 migration) - without this cleanup, {@code
+     * StudentService#delete} would start throwing a live foreign-key-constraint-violation error
+     * the moment a Student with any timetable entry was deleted. {@code lesson_preparation} was
+     * ALREADY student-scoped before this revision and had the exact same pre-existing gap
+     * (discovered during this same investigation - it was never cleaned up on Student delete
+     * either), so it is fixed here too, in the same pass, for the same reason.
+     * <p>
+     * Deliberately does NOT also cover {@code test}/{@code attempt}/{@code lesson_report}, which
+     * this same investigation found ALSO have a live {@code REFERENCES student(id)} foreign key
+     * with zero cascade-on-student-delete cleanup today (a pre-existing bug, not introduced by
+     * this change) - deleting Test/Attempt history is a materially bigger, more destructive
+     * decision (permanent loss of grading history) than this method's two tables, and was not
+     * part of what the user asked for in this request; flagged for the user rather than silently
+     * folded in here.
+     */
+    @Transactional
+    public void deleteStudentTimetableDataCascade(Long studentId) {
+        timetableEntryRepository.delete().eq(TimetableEntry::getStudentId, studentId).execute();
+        lessonPreparationRepository.delete().eq(LessonPreparation::getStudentId, studentId).execute();
+        logInfo("Cascade-deleted timetable/lesson-preparation data for studentId={}", studentId);
+    }
+
     /** Best-effort delete - a missing/already-gone file is not an error worth failing the caller's request over, same reasoning as every other {@code deleteXxxFileQuietly} in this codebase. */
     private void deleteFileQuietly(Path dir, String filename) {
         if (filename == null) {

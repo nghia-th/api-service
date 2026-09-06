@@ -5,7 +5,7 @@ import vn.org.thn.service.app.quiz.entity.Subject;
 import vn.org.thn.service.app.quiz.entity.TimetableEntry;
 
 /**
- * One row of a Classroom's weekly timetable, with the Subject's name already resolved so the
+ * One row of a Student's weekly timetable, with the Subject's name already resolved so the
  * frontend never needs a second round-trip per entry - same "embed the display fields the UI
  * needs directly" reasoning as {@code SubjectLibraryLinkResponse} embedding a full {@code
  * LibraryDocumentResponse}.

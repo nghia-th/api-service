@@ -26,11 +26,18 @@ import java.util.List;
  * docs/dev/02-quan-ly-ho-so-con.md} acceptance criteria: Parent A must never be able to
  * read/update/delete a Student belonging to Parent B, even when it knows that student's id.
  * <p>
- * {@code DELETE} does a hard delete in v1 - {@code Test}/{@code Attempt} entities do not exist
- * yet (task 5/6), so there is nothing to check before removing a Student's row. Once task 6 adds
- * {@code Attempt}, this should be revisited to block deletion of a Student that already has
- * attempts (per the task 2 doc's own note); confirmed with the user to defer that check rather
- * than block task 2 on entities that don't exist yet.
+ * {@code DELETE} does a hard delete, with SOME cascade cleanup added 2026-09-06 (see {@link
+ * CascadeDeleteService#deleteStudentTimetableDataCascade}): {@code TimetableEntry} and {@code
+ * LessonPreparation} rows for this Student are removed first, otherwise the delete below would
+ * throw a foreign-key-constraint-violation the moment a Student with a timetable had a real
+ * {@code student_id} foreign key added to {@code timetable_entry} (V7 migration). {@code Test}/
+ * {@code Attempt}/{@code LessonReport} rows are NOT cleaned up here - this codebase's original
+ * v1 note below (deferred because those entities didn't exist yet) is now stale (they do exist,
+ * and DO have their own {@code REFERENCES student(id)} foreign keys), so deleting a Student that
+ * already has any Test/Attempt/LessonReport row will still throw today - a pre-existing bug,
+ * flagged to the user but deliberately NOT fixed as part of this change (unlike the Timetable
+ * tables above, it was not made worse by this change, and fixing it means permanently losing a
+ * Student's grading history, a materially bigger decision that deserves its own confirmation).
  */
 @Service
 public class StudentService extends IBase {
@@ -42,6 +49,9 @@ public class StudentService extends IBase {
 
     @Autowired
     private ClassroomService classroomService;
+
+    @Autowired
+    private CascadeDeleteService cascadeDeleteService;
 
     public StudentResponse create(StudentCreateRequest request) {
         Long parentId = CurrentUser.get().userId();
@@ -110,6 +120,7 @@ public class StudentService extends IBase {
     public void delete(Long id) {
         Long parentId = CurrentUser.get().userId();
         Student student = getOwnedOrThrow(id, parentId);
+        cascadeDeleteService.deleteStudentTimetableDataCascade(student.getId());
         studentRepository.deleteById(student.getId());
         logInfo("Student deleted: id={}, parentId={}", student.getId(), parentId);
     }

@@ -6,7 +6,7 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * Body of {@code PUT /api/parent/classrooms/{classroomId}/timetable/{dayOfWeek}} - REPLACES the
+ * Body of {@code PUT /api/parent/students/{studentId}/timetable/{dayOfWeek}} - REPLACES the
  * whole day's subject list in one call, not an incremental add/remove/reorder API - see {@code
  * TimetableService#setDay}'s javadoc for why a full-replace call is simpler and safer here than a
  * per-entry CRUD surface. {@code subjectIds} order becomes each new entry's {@code orderIndex}
