@@ -1,3 +1,11 @@
+-- Consolidated baseline (2026-09-06) - replaces the previous V1..V8 migration history.
+-- quiz-service has not been deployed anywhere real yet (pre-production, per anh's confirmation),
+-- so the 8 incremental migrations (curriculum, timetable, lesson_preparation, timetable_subject,
+-- lesson_report, timetable_per_student, subject_shared_across_classrooms) are squashed into this
+-- single file reflecting the CURRENT final schema, instead of replaying history that nobody but
+-- this repo's own commits ever needs. Local dev SQLite data was wiped (data/app.db*) as part of
+-- this change, per anh's explicit confirmation, since Flyway's checksum for a from-scratch V1
+-- would otherwise mismatch what was already recorded for the old V1..V8 files.
 CREATE TABLE translate
 (
     lang_key TEXT NOT NULL,
@@ -61,10 +69,15 @@ CREATE TABLE student
     CONSTRAINT fk_student_classroom FOREIGN KEY (classroom_id) REFERENCES classroom (id)
 );
 
+-- Subject: classroom_id is NULLABLE - NULL means "shared across every Classroom of this Parent"
+-- (subject_shared_across_classrooms, 2026-09-06). parent_id is the real ownership FK (added
+-- alongside classroom_id becoming nullable, since ownership can no longer always be derived via
+-- classroom_id -> classroom.parent_id).
 CREATE TABLE subject
 (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    classroom_id INTEGER NOT NULL,
+    classroom_id INTEGER,
+    parent_id    INTEGER NOT NULL,
     name         TEXT    NOT NULL,
     created_at   DATETIME,
     updated_at   DATETIME,
@@ -72,8 +85,10 @@ CREATE TABLE subject
     updated_by   TEXT,
     deleted      BOOLEAN NOT NULL DEFAULT 0,
 
-    CONSTRAINT fk_subject_classroom FOREIGN KEY (classroom_id) REFERENCES classroom (id)
+    CONSTRAINT fk_subject_classroom FOREIGN KEY (classroom_id) REFERENCES classroom (id),
+    CONSTRAINT fk_subject_parent FOREIGN KEY (parent_id) REFERENCES parent (id)
 );
+CREATE INDEX idx_subject_parent ON subject (parent_id);
 
 CREATE TABLE lesson
 (
@@ -257,3 +272,81 @@ CREATE TABLE subject_library_link
     CONSTRAINT fk_subject_library_link_subject FOREIGN KEY (subject_id) REFERENCES subject (id),
     CONSTRAINT fk_subject_library_link_document FOREIGN KEY (library_document_id) REFERENCES library_document (id)
 );
+
+-- Admin-managed "bo sach" (curriculum) lookup list - LibraryDocument.curriculum keeps storing the
+-- plain name (not a foreign key - see Curriculum.java's javadoc).
+CREATE TABLE curriculum
+(
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL,
+    created_at DATETIME,
+    updated_at DATETIME,
+    created_by TEXT,
+    updated_by TEXT,
+    deleted    BOOLEAN NOT NULL DEFAULT 0,
+
+    CONSTRAINT uq_curriculum_name UNIQUE (name)
+);
+
+-- Weekly timetable ("thoi khoa bieu") per Student (not per Classroom - 2 siblings in the same
+-- Classroom can have different schedules). Single persistent template (no per-week snapshot) -
+-- day_of_week is 1-7 Monday-Sunday (java.time.DayOfWeek#getValue(), ISO-8601). Pins a Subject
+-- (not an exact Lesson) - order_index alone controls display order within a day.
+CREATE TABLE timetable_entry
+(
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id  INTEGER NOT NULL,
+    day_of_week INTEGER NOT NULL,
+    subject_id  INTEGER NOT NULL,
+    order_index INTEGER NOT NULL,
+    created_at  DATETIME,
+    updated_at  DATETIME,
+    created_by  TEXT,
+    updated_by  TEXT,
+    deleted     BOOLEAN NOT NULL DEFAULT 0,
+
+    CONSTRAINT fk_timetable_entry_student FOREIGN KEY (student_id) REFERENCES student (id),
+    CONSTRAINT fk_timetable_entry_subject FOREIGN KEY (subject_id) REFERENCES subject (id)
+);
+CREATE INDEX idx_timetable_entry_student_day ON timetable_entry (student_id, day_of_week);
+
+-- "Prepared for tomorrow" checklist - a row's mere EXISTENCE means the Student marked subject_id
+-- as prepared for target_date (unmarking is a plain DELETE, no boolean flag column).
+CREATE TABLE lesson_preparation
+(
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id  INTEGER NOT NULL,
+    target_date DATE    NOT NULL,
+    subject_id  INTEGER NOT NULL,
+    created_at  DATETIME,
+    updated_at  DATETIME,
+    created_by  TEXT,
+    updated_by  TEXT,
+    deleted     BOOLEAN NOT NULL DEFAULT 0,
+
+    CONSTRAINT fk_lesson_preparation_student FOREIGN KEY (student_id) REFERENCES student (id),
+    CONSTRAINT fk_lesson_preparation_subject FOREIGN KEY (subject_id) REFERENCES subject (id),
+    CONSTRAINT uq_lesson_preparation UNIQUE (student_id, target_date, subject_id)
+);
+CREATE INDEX idx_lesson_preparation_student_date ON lesson_preparation (student_id, target_date);
+
+-- "Bao bai" - a real log of a Student confirming they finished a specific Lesson on a specific
+-- report_date, kept forever as history for the Parent to review. UNIQUE(student_id, lesson_id) -
+-- a Lesson once reported (any date) is hidden from that Student's pick list forever after.
+CREATE TABLE lesson_report
+(
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id  INTEGER NOT NULL,
+    lesson_id   INTEGER NOT NULL,
+    report_date DATE    NOT NULL,
+    created_at  DATETIME,
+    updated_at  DATETIME,
+    created_by  TEXT,
+    updated_by  TEXT,
+    deleted     BOOLEAN NOT NULL DEFAULT 0,
+
+    CONSTRAINT fk_lesson_report_student FOREIGN KEY (student_id) REFERENCES student (id),
+    CONSTRAINT fk_lesson_report_lesson FOREIGN KEY (lesson_id) REFERENCES lesson (id),
+    CONSTRAINT uq_lesson_report_student_lesson UNIQUE (student_id, lesson_id)
+);
+CREATE INDEX idx_lesson_report_student_date ON lesson_report (student_id, report_date);

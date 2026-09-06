@@ -2,6 +2,7 @@ package vn.org.thn.service.app.quiz.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import vn.org.thn.service.app.quiz.dto.BulkDeleteResponse;
 import vn.org.thn.service.app.quiz.dto.SubjectRequest;
 import vn.org.thn.service.app.quiz.dto.SubjectResponse;
 import vn.org.thn.service.app.quiz.entity.Subject;
@@ -138,6 +139,16 @@ public class SubjectService extends IBase {
         Subject subject = getOwnedOrThrow(id, parentId);
         cascadeDeleteService.deleteSubjectCascade(subject.getId());
         logInfo("Subject deleted (cascade): id={}, parentId={}", subject.getId(), parentId);
+    }
+
+    /**
+     * Bulk delete (2026-09-06, "xoa muon hoc") - deletes each of {@code ids} via this class's own
+     * {@link #delete}, so every id gets the same ownership check + cascade as a single delete.
+     * Best-effort: one id failing (wrong owner, already gone, ...) does not stop the rest - see
+     * {@link BulkDeleteSupport}.
+     */
+    public BulkDeleteResponse deleteMany(List<Long> ids) {
+        return BulkDeleteSupport.deleteEach(ids, this::delete);
     }
 
     /**

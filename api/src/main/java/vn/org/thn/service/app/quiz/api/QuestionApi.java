@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import vn.org.thn.service.app.quiz.dto.BulkDeleteResponse;
 import vn.org.thn.service.app.quiz.dto.QuestionAudio;
 import vn.org.thn.service.app.quiz.dto.QuestionImportResponse;
 import vn.org.thn.service.app.quiz.dto.QuestionVideo;
@@ -129,6 +130,18 @@ public class QuestionApi extends BaseCtl {
     public ResponseEntity<ApiResponse<Void>> delete(@Parameter(description = "Question id") @PathVariable Long id) {
         questionService.delete(id);
         return ok();
+    }
+
+    @Operation(
+            summary = "Bulk-delete questions",
+            description = "Best-effort - deletes every id in the request body via the same cascade as the single-delete endpoint above; one id failing (wrong owner, already gone, ...) does not stop the rest. Used for both \"delete selected\" (a subset of ids) and \"delete all\" (every id currently listed) from the frontend, which already scopes the ids to one Lesson before calling this."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Request processed - check the response body for per-id errors, if any (this is 200 even when some/all ids failed, since the request itself succeeded)")
+    })
+    @DeleteMapping("/deletes")
+    public ResponseEntity<ApiResponse<BulkDeleteResponse>> deleteMany(@RequestBody List<Long> ids) {
+        return ok(questionService.deleteMany(ids));
     }
 
     @Operation(

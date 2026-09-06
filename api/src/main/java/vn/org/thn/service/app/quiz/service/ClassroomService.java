@@ -2,15 +2,11 @@ package vn.org.thn.service.app.quiz.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import vn.org.thn.service.app.quiz.dto.BulkDeleteResponse;
 import vn.org.thn.service.app.quiz.dto.ClassroomRequest;
 import vn.org.thn.service.app.quiz.dto.ClassroomResponse;
 import vn.org.thn.service.app.quiz.entity.Classroom;
-import vn.org.thn.service.app.quiz.entity.Student;
-import vn.org.thn.service.app.quiz.entity.Subject;
-import vn.org.thn.service.app.quiz.exception.QuizErrorCode;
 import vn.org.thn.service.app.quiz.repository.ClassroomRepository;
-import vn.org.thn.service.app.quiz.repository.StudentRepository;
-import vn.org.thn.service.app.quiz.repository.SubjectRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.base.IBase;
 import vn.org.thn.service.base.exception.BusinessException;
@@ -25,9 +21,14 @@ import java.util.List;
  * Same shape as {@link SubjectService}: every method reads {@link CurrentUser#get()} itself,
  * ownership enforced here rather than trusted from the caller.
  * <p>
- * {@code delete} blocks when the Classroom still has {@link Student} or {@link Subject} children -
- * same "protect against orphaning/losing data" reasoning as {@code SubjectService#delete}
- * blocking on {@link vn.org.thn.service.app.quiz.entity.Lesson} children.
+ * <b>Revision 2026-09-06:</b> {@code delete} used to BLOCK outright when the Classroom still had
+ * any {@code Student} or {@code Subject} ({@code CLASSROOM_HAS_STUDENTS}/{@code
+ * CLASSROOM_HAS_SUBJECTS}) - per the user's explicit choice (confirmed via AskUserQuestion,
+ * "Xoa ca Hoc sinh trong lop"), it now cascades instead: every Subject/Lesson/Question/Test under
+ * it AND every Student in it (with that Student's own full data) are deleted along with the
+ * Classroom - see {@link CascadeDeleteService#deleteClassroomCascade}. Same "cascade instead of
+ * block" rule already applied one level down by {@code SubjectService#delete}/{@code
+ * LessonService#delete}/{@code QuestionService#delete}/{@code TestService#delete}.
  */
 @Service
 public class ClassroomService extends IBase {
@@ -36,10 +37,7 @@ public class ClassroomService extends IBase {
     private ClassroomRepository classroomRepository;
 
     @Autowired
-    private StudentRepository studentRepository;
-
-    @Autowired
-    private SubjectRepository subjectRepository;
+    private CascadeDeleteService cascadeDeleteService;
 
     public ClassroomResponse create(ClassroomRequest request) {
         Long parentId = CurrentUser.get().userId();
@@ -82,18 +80,28 @@ public class ClassroomService extends IBase {
                 .stream().map(ClassroomResponse::from).toList();
     }
 
+    /**
+     * Deletes this Classroom and, per the 2026-09-06 revision, everything that depends on it -
+     * see {@link CascadeDeleteService#deleteClassroomCascade}. The actual row deletion (Subjects,
+     * Lessons, Questions, Tests, Students and all of their own data, ...) happens there; this
+     * method only does the ownership check first, same "auth here, cascade there" split as
+     * {@code SubjectService#delete}/{@code LessonService#delete}/{@code QuestionService#delete}.
+     */
     public void delete(Long id) {
         Long parentId = CurrentUser.get().userId();
         Classroom classroom = getOwnedOrThrow(id, parentId);
+        cascadeDeleteService.deleteClassroomCascade(classroom.getId());
+        logInfo("Classroom deleted (cascade): id={}, parentId={}", classroom.getId(), parentId);
+    }
 
-        if (studentRepository.query().eq(Student::getClassroomId, classroom.getId()).exists()) {
-            throw new BusinessException(QuizErrorCode.CLASSROOM_HAS_STUDENTS);
-        }
-        if (subjectRepository.query().eq(Subject::getClassroomId, classroom.getId()).exists()) {
-            throw new BusinessException(QuizErrorCode.CLASSROOM_HAS_SUBJECTS);
-        }
-        classroomRepository.deleteById(classroom.getId());
-        logInfo("Classroom deleted: id={}, parentId={}", classroom.getId(), parentId);
+    /**
+     * Bulk delete (2026-09-06, "xoa lop") - deletes each of {@code ids} via this class's own
+     * {@link #delete}, so every id gets the same ownership check + cascade as a single delete.
+     * Best-effort: one id failing (wrong owner, already gone, ...) does not stop the rest - see
+     * {@link BulkDeleteSupport}.
+     */
+    public BulkDeleteResponse deleteMany(List<Long> ids) {
+        return BulkDeleteSupport.deleteEach(ids, this::delete);
     }
 
     /** Loads the Classroom with id {@code id}, throwing if it doesn't exist or doesn't belong to {@code parentId}. Package-private so {@code StudentService}/{@code SubjectService} can reuse it, same pattern as {@code SubjectService#getOwnedOrThrow}. */

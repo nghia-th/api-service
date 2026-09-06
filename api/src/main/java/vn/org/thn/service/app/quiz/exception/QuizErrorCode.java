@@ -99,6 +99,13 @@ public enum QuizErrorCode implements ErrorCode {
     IMPORT_TOO_MANY_ROWS("QUIZ_011", "Import file has too many rows", HttpStatus.BAD_REQUEST),
     IMPORT_FILE_UNREADABLE("QUIZ_012", "Import file could not be read - check the format and template", HttpStatus.BAD_REQUEST),
     ATTEMPT_NOT_SUBMITTED("QUIZ_013", "This attempt has not been submitted yet", HttpStatus.CONFLICT),
+    // CLASSROOM_HAS_STUDENTS/CLASSROOM_HAS_SUBJECTS (below) are RETIRED as of 2026-09-06 - neither
+    // is thrown anymore, kept defined only in case old client code/logs still reference these
+    // QUIZ_xxx codes. ClassroomService#delete used to throw these to BLOCK deletion when the
+    // classroom still had students/subjects; per the user's explicit request (confirmed via
+    // AskUserQuestion, "Xoa ca Hoc sinh trong lop") it now cascades instead - see
+    // CascadeDeleteService#deleteClassroomCascade, same "cascade instead of block" rule already
+    // applied to Subject/Lesson/Question/Test (see the QUIZ_005/006/008/009 retirement note above).
     CLASSROOM_HAS_STUDENTS("QUIZ_014", "Classroom still has students - move or delete them first", HttpStatus.CONFLICT),
     CLASSROOM_HAS_SUBJECTS("QUIZ_015", "Classroom still has subjects - delete them first", HttpStatus.CONFLICT),
     LESSON_IMAGE_INVALID_TYPE("QUIZ_016", "Lesson image must be a JPEG, PNG or WebP file", HttpStatus.BAD_REQUEST),

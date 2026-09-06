@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import vn.org.thn.service.app.quiz.dto.BulkDeleteResponse;
 import vn.org.thn.service.app.quiz.dto.ClassroomRequest;
 import vn.org.thn.service.app.quiz.dto.ClassroomResponse;
 import vn.org.thn.service.app.quiz.security.JwtAuthFilter;
@@ -95,17 +96,28 @@ public class ClassroomApi extends BaseCtl {
 
     @Operation(
             summary = "Delete a classroom",
-            description = "Blocked while the Classroom still has Student or Subject children - move/delete them first. Only the owning Parent can delete their own Classroom."
+            description = "CASCADES (2026-09-06 revision) - deletes every Subject/Lesson/Question/Test under this Classroom AND every Student in it, including that Student's own full data (Tests/Attempts/score history, timetable, lesson-preparation, lesson-report rows). No longer blocked by Student/Subject children (was QUIZ_014/QUIZ_015 - see CascadeDeleteService's javadoc). Only the owning Parent can delete their own Classroom. Irreversible."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted successfully - no response body"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted successfully (with everything under it) - no response body"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This classroom does not belong to the current parent - COMMON_004 FORBIDDEN"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No classroom with this id - COMMON_005 NOT_FOUND"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Classroom still has students (QUIZ_014) or subjects (QUIZ_015)")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No classroom with this id - COMMON_005 NOT_FOUND")
     })
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> delete(@Parameter(description = "Classroom id") @PathVariable Long id) {
         classroomService.delete(id);
         return ok();
+    }
+
+    @Operation(
+            summary = "Bulk-delete classrooms",
+            description = "Best-effort - deletes every id in the request body via the same cascade as the single-delete endpoint above; one id failing (wrong owner, already gone, ...) does not stop the rest."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Request processed - check the response body for per-id errors, if any (this is 200 even when some/all ids failed, since the request itself succeeded)")
+    })
+    @DeleteMapping("/deletes")
+    public ResponseEntity<ApiResponse<BulkDeleteResponse>> deleteMany(@RequestBody List<Long> ids) {
+        return ok(classroomService.deleteMany(ids));
     }
 }

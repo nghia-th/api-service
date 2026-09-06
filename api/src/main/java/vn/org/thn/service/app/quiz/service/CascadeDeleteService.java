@@ -10,6 +10,8 @@ import vn.org.thn.service.app.quiz.entity.Lesson;
 import vn.org.thn.service.app.quiz.entity.LessonPreparation;
 import vn.org.thn.service.app.quiz.entity.LessonReport;
 import vn.org.thn.service.app.quiz.entity.Question;
+import vn.org.thn.service.app.quiz.entity.Student;
+import vn.org.thn.service.app.quiz.entity.Subject;
 import vn.org.thn.service.app.quiz.entity.SubjectLibraryLink;
 import vn.org.thn.service.app.quiz.entity.Test;
 import vn.org.thn.service.app.quiz.entity.TestQuestion;
@@ -20,7 +22,9 @@ import vn.org.thn.service.app.quiz.repository.ChoiceRepository;
 import vn.org.thn.service.app.quiz.repository.LessonPreparationRepository;
 import vn.org.thn.service.app.quiz.repository.LessonReportRepository;
 import vn.org.thn.service.app.quiz.repository.LessonRepository;
+import vn.org.thn.service.app.quiz.repository.ClassroomRepository;
 import vn.org.thn.service.app.quiz.repository.QuestionRepository;
+import vn.org.thn.service.app.quiz.repository.StudentRepository;
 import vn.org.thn.service.app.quiz.repository.SubjectLibraryLinkRepository;
 import vn.org.thn.service.app.quiz.repository.SubjectRepository;
 import vn.org.thn.service.app.quiz.repository.TestQuestionRepository;
@@ -124,6 +128,12 @@ public class CascadeDeleteService extends IBase {
     @Autowired
     private SubjectRepository subjectRepository;
 
+    @Autowired
+    private StudentRepository studentRepository;
+
+    @Autowired
+    private ClassroomRepository classroomRepository;
+
     /**
      * Deletes every {@code testIds} Test, including its Attempts, their AttemptAnswer rows (and
      * any recorded speaking-answer audio files), and its TestQuestion rows. No-op on an empty
@@ -225,6 +235,41 @@ public class CascadeDeleteService extends IBase {
         subjectLibraryLinkRepository.delete().eq(SubjectLibraryLink::getSubjectId, subjectId).execute();
         subjectRepository.deleteById(subjectId);
         logInfo("Cascade-deleted subject id={}, {} lesson(s) under it", subjectId, lessonIds.size());
+    }
+
+    /**
+     * Deletes {@code classroomId} entirely: every Subject owned by it (via {@link
+     * #deleteSubjectCascade}, looped per subject id - that method takes a single id, unlike its
+     * sibling {@code deleteXxxCascade} methods which take a {@code List}, and is left as-is since
+     * it has exactly one existing caller, {@code SubjectService#delete}, that this change must
+     * not disturb), every Student in it (via {@link #deleteStudentDataCascade} for that Student's
+     * own data, then the Student row itself - same two-step split {@code StudentService#delete}
+     * already uses), and finally the Classroom row itself.
+     * <p>
+     * Confirmed via AskUserQuestion (2026-09-06): deleting a Classroom now cascades away its
+     * Students too ("Xoa ca Hoc sinh trong lop"), replacing the old {@code
+     * CLASSROOM_HAS_STUDENTS}/{@code CLASSROOM_HAS_SUBJECTS} hard blocks in {@code
+     * ClassroomService#delete} - same "cascade instead of block" rule this class already applies
+     * to Subject/Lesson/Question/Test, now extended one level up the hierarchy.
+     */
+    @Transactional
+    public void deleteClassroomCascade(Long classroomId) {
+        List<Long> subjectIds = subjectRepository.query().eq(Subject::getClassroomId, classroomId).list()
+                .stream().map(Subject::getId).toList();
+        for (Long subjectId : subjectIds) {
+            deleteSubjectCascade(subjectId);
+        }
+
+        List<Long> studentIds = studentRepository.query().eq(Student::getClassroomId, classroomId).list()
+                .stream().map(Student::getId).toList();
+        for (Long studentId : studentIds) {
+            deleteStudentDataCascade(studentId);
+            studentRepository.deleteById(studentId);
+        }
+
+        classroomRepository.deleteById(classroomId);
+        logInfo("Cascade-deleted classroom id={}, {} subject(s), {} student(s)",
+                classroomId, subjectIds.size(), studentIds.size());
     }
 
     /**

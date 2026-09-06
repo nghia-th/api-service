@@ -3,6 +3,7 @@ package vn.org.thn.service.app.quiz.service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import vn.org.thn.service.app.quiz.dto.BulkDeleteResponse;
 import vn.org.thn.service.app.quiz.dto.LessonCreateRequest;
 import vn.org.thn.service.app.quiz.dto.LessonImage;
 import vn.org.thn.service.app.quiz.dto.LessonResponse;
@@ -164,6 +165,16 @@ public class LessonService extends IBase {
         Lesson lesson = getOwnedOrThrow(id, parentId);
         cascadeDeleteService.deleteLessonsCascade(List.of(lesson.getId()));
         logInfo("Lesson deleted (cascade): id={}, parentId={}", lesson.getId(), parentId);
+    }
+
+    /**
+     * Bulk delete (2026-09-06, "xoa bai cua muon hoc") - deletes each of {@code ids} via this
+     * class's own {@link #delete}, so every id gets the same ownership check + cascade as a
+     * single delete. Best-effort: one id failing (wrong owner, already gone, ...) does not stop
+     * the rest - see {@link BulkDeleteSupport}.
+     */
+    public BulkDeleteResponse deleteMany(List<Long> ids) {
+        return BulkDeleteSupport.deleteEach(ids, this::delete);
     }
 
     /**
