@@ -14,12 +14,10 @@ import vn.org.thn.service.app.quiz.entity.AttemptAnswer;
 import vn.org.thn.service.app.quiz.entity.Choice;
 import vn.org.thn.service.app.quiz.entity.Question;
 import vn.org.thn.service.app.quiz.entity.QuestionType;
-import vn.org.thn.service.app.quiz.entity.TestQuestion;
 import vn.org.thn.service.app.quiz.exception.QuizErrorCode;
 import vn.org.thn.service.app.quiz.repository.AttemptAnswerRepository;
 import vn.org.thn.service.app.quiz.repository.ChoiceRepository;
 import vn.org.thn.service.app.quiz.repository.QuestionRepository;
-import vn.org.thn.service.app.quiz.repository.TestQuestionRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.base.IBase;
 import vn.org.thn.service.base.db.DatabasePath;
@@ -108,10 +106,10 @@ public class QuestionService extends IBase {
     private LessonService lessonService;
 
     @Autowired
-    private TestQuestionRepository testQuestionRepository;
+    private AttemptAnswerRepository attemptAnswerRepository;
 
     @Autowired
-    private AttemptAnswerRepository attemptAnswerRepository;
+    private CascadeDeleteService cascadeDeleteService;
 
     @Transactional
     public QuestionResponse create(QuestionRequest request) {
@@ -181,18 +179,21 @@ public class QuestionService extends IBase {
     }
 
     @Transactional
+    /**
+     * Deletes this Question and, per the 2026-09-06 revision, every Test that has it on ANY
+     * TestQuestion row - see {@link CascadeDeleteService#deleteQuestionsCascade} (also handles
+     * this question's own Choices/audio/video files, so this method no longer does those steps
+     * itself). Used to BLOCK outright via {@code QUESTION_USED_IN_TEST} (QUIZ_008) instead - see
+     * {@link CascadeDeleteService}'s javadoc, decision 2, for why a direct single-Question delete
+     * now cascades the same way a Subject/Lesson delete does. This method only does the
+     * ownership check first, same "auth here, cascade there" split as {@link
+     * SubjectService#delete}/{@link LessonService#delete}/{@link TestService#delete}.
+     */
     public void delete(Long id) {
         Long parentId = CurrentUser.get().userId();
         Question question = getOwnedOrThrow(id, parentId);
-
-        if (testQuestionRepository.query().eq(TestQuestion::getQuestionId, id).exists()) {
-            throw new BusinessException(QuizErrorCode.QUESTION_USED_IN_TEST);
-        }
-        choiceRepository.delete().eq(Choice::getQuestionId, id).execute();
-        deleteAudioFileQuietly(question.getAudioPath());
-        deleteVideoFileQuietly(question.getVideoPath());
-        questionRepository.deleteById(question.getId());
-        logInfo("Question deleted: id={}, parentId={}", question.getId(), parentId);
+        cascadeDeleteService.deleteQuestionsCascade(List.of(question.getId()));
+        logInfo("Question deleted (cascade): id={}, parentId={}", question.getId(), parentId);
     }
 
     /**

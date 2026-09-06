@@ -118,13 +118,12 @@ public class QuestionApi extends BaseCtl {
 
     @Operation(
             summary = "Delete a question",
-            description = "Blocked if the question is already used in any test (assigned or completed), to avoid breaking past results. Only the owning Parent can delete it."
+            description = "CASCADES (2026-09-06 revision) - if this question is on any Test, that WHOLE Test is deleted too (even if it also has unrelated questions), including its Attempt/score history. No longer blocked by test usage (was QUIZ_008 - see CascadeDeleteService's javadoc). Only the owning Parent can delete it. Irreversible."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted successfully - no response body"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted successfully (with any Test that had it) - no response body"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This question does not belong to the current parent - COMMON_004 FORBIDDEN"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No question with this id - COMMON_005 NOT_FOUND"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Question is used in a test - QUIZ_008 QUESTION_USED_IN_TEST")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No question with this id - COMMON_005 NOT_FOUND")
     })
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> delete(@Parameter(description = "Question id") @PathVariable Long id) {

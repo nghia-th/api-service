@@ -5,10 +5,7 @@ import org.springframework.stereotype.Service;
 import vn.org.thn.service.app.quiz.dto.SubjectRequest;
 import vn.org.thn.service.app.quiz.dto.SubjectResponse;
 import vn.org.thn.service.app.quiz.entity.Classroom;
-import vn.org.thn.service.app.quiz.entity.Lesson;
 import vn.org.thn.service.app.quiz.entity.Subject;
-import vn.org.thn.service.app.quiz.exception.QuizErrorCode;
-import vn.org.thn.service.app.quiz.repository.LessonRepository;
 import vn.org.thn.service.app.quiz.repository.SubjectRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.base.IBase;
@@ -23,10 +20,12 @@ import java.util.List;
  * StudentService}: every method reads {@link CurrentUser#get()} itself, and ownership is enforced
  * here rather than trusted from the caller.
  * <p>
- * {@code delete} blocks when the Subject still has {@link Lesson} children, per the task 3 spec -
- * unlike {@code StudentService#delete} (task 2), this rule is fully implementable now because
- * {@code Lesson} already exists (created in this same task), so there is no "child entity doesn't
- * exist yet" deferral needed here.
+ * <b>Revision 2026-09-06:</b> {@code delete} used to BLOCK outright when the Subject still had
+ * {@code Lesson} children (task 3's original rule). Per the user's explicit request ("phu huynh
+ * can duoc xoa cac du lieu nhu mon hoc, bai hoc, de on, neu cac du lieu do duoc lien ket voi hoc
+ * sinh thi xoa luon nhung du lieu lien quan"), it now cascades instead - see {@link
+ * CascadeDeleteService}'s javadoc for the full cascade design (every Lesson/Question/Test that
+ * depends on this Subject is deleted with it, including any Test's Attempt/score history).
  * <p>
  * Subject has no {@code parentId} of its own (see the entity's javadoc, added when Classroom was
  * introduced) - ownership always resolves through {@link ClassroomService#getOwnedOrThrow}, same
@@ -39,10 +38,10 @@ public class SubjectService extends IBase {
     private SubjectRepository subjectRepository;
 
     @Autowired
-    private LessonRepository lessonRepository;
+    private ClassroomService classroomService;
 
     @Autowired
-    private ClassroomService classroomService;
+    private CascadeDeleteService cascadeDeleteService;
 
     @Autowired
     private vn.org.thn.service.app.quiz.repository.ClassroomRepository classroomRepository;
@@ -113,15 +112,18 @@ public class SubjectService extends IBase {
                 .stream().map(SubjectResponse::from).toList();
     }
 
+    /**
+     * Deletes this Subject and, per the 2026-09-06 revision, everything that depends on it -
+     * see {@link CascadeDeleteService#deleteSubjectCascade}. The actual row deletion (Lessons,
+     * Questions, Tests, Attempts, Timetable/preparation rows, ...) happens there; this method
+     * only does the ownership check first, same "auth here, cascade there" split as {@link
+     * LessonService#delete}/{@link QuestionService#delete}/{@link TestService#delete}.
+     */
     public void delete(Long id) {
         Long parentId = CurrentUser.get().userId();
         Subject subject = getOwnedOrThrow(id, parentId);
-
-        if (lessonRepository.query().eq(Lesson::getSubjectId, subject.getId()).exists()) {
-            throw new BusinessException(QuizErrorCode.SUBJECT_HAS_LESSONS);
-        }
-        subjectRepository.deleteById(subject.getId());
-        logInfo("Subject deleted: id={}, parentId={}", subject.getId(), parentId);
+        cascadeDeleteService.deleteSubjectCascade(subject.getId());
+        logInfo("Subject deleted (cascade): id={}, parentId={}", subject.getId(), parentId);
     }
 
     /** Loads the Subject with id {@code id}, throwing if it doesn't exist or its Classroom doesn't belong to {@code parentId}. Also used by {@link LessonService} to resolve a Lesson's indirect owner. */

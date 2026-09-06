@@ -159,13 +159,12 @@ public class TestApi extends BaseCtl {
 
     @Operation(
             summary = "Delete a test",
-            description = "Blocked once the test has any attempt (in progress or submitted), to avoid losing result history. Only the owning Parent can delete their own Test."
+            description = "CASCADES (2026-09-06 revision) - deletes its Attempts/answers too, even if already submitted/graded. No longer blocked by existing attempts (was QUIZ_009 - see CascadeDeleteService's javadoc); this permanently loses that test's score history. Only the owning Parent can delete their own Test. Irreversible."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted successfully - no response body"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted successfully (with any attempts/answers) - no response body"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This test does not belong to the current parent - COMMON_004 FORBIDDEN"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No test with this id - COMMON_005 NOT_FOUND"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Test already has an attempt - QUIZ_009 TEST_HAS_ATTEMPTS")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No test with this id - COMMON_005 NOT_FOUND")
     })
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> delete(@Parameter(description = "Test id") @PathVariable Long id) {

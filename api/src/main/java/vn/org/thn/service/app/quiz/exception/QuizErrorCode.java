@@ -84,6 +84,12 @@ public enum QuizErrorCode implements ErrorCode {
     EMAIL_TAKEN("QUIZ_002", "Email already registered", HttpStatus.CONFLICT),
     USERNAME_TAKEN("QUIZ_003", "Username already taken", HttpStatus.CONFLICT),
     INVALID_CREDENTIALS("QUIZ_004", "Invalid email/username or password", HttpStatus.UNAUTHORIZED),
+    // SUBJECT_HAS_LESSONS/LESSON_HAS_QUESTIONS/QUESTION_USED_IN_TEST/TEST_HAS_ATTEMPTS (below) are
+    // RETIRED as of 2026-09-06 - none of the 4 is thrown anymore, kept defined only in case old
+    // client code/logs still reference these QUIZ_xxx codes. SubjectService/LessonService/
+    // QuestionService/TestService's delete() methods used to throw these to BLOCK deletion when
+    // related data existed; per the user's explicit request they now cascade instead - see
+    // CascadeDeleteService's javadoc for the full design.
     SUBJECT_HAS_LESSONS("QUIZ_005", "Subject still has lessons - delete its lessons first", HttpStatus.CONFLICT),
     LESSON_HAS_QUESTIONS("QUIZ_006", "Lesson still has questions - delete its questions first", HttpStatus.CONFLICT),
     QUESTION_MUST_HAVE_ONE_CORRECT_CHOICE("QUIZ_007", "A question must have exactly one correct choice", HttpStatus.BAD_REQUEST),

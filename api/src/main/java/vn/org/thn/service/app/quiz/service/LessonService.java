@@ -8,10 +8,8 @@ import vn.org.thn.service.app.quiz.dto.LessonImage;
 import vn.org.thn.service.app.quiz.dto.LessonResponse;
 import vn.org.thn.service.app.quiz.dto.LessonUpdateRequest;
 import vn.org.thn.service.app.quiz.entity.Lesson;
-import vn.org.thn.service.app.quiz.entity.Question;
 import vn.org.thn.service.app.quiz.exception.QuizErrorCode;
 import vn.org.thn.service.app.quiz.repository.LessonRepository;
-import vn.org.thn.service.app.quiz.repository.QuestionRepository;
 import vn.org.thn.service.app.quiz.security.CurrentUser;
 import vn.org.thn.service.base.IBase;
 import vn.org.thn.service.base.db.DatabasePath;
@@ -37,14 +35,13 @@ import java.util.UUID;
  * Lesson, and now {@code StudentLessonService} also reuses {@link #getById} + {@link #loadImage}
  * once it has independently proven a Student may see this Lesson.
  * <p>
- * {@code delete} blocks on {@code Question} children via {@code QuizErrorCode#LESSON_HAS_QUESTIONS}
- * (QUIZ_006) - this was deferred in task 3 (see that task's decision #12) because {@code Question}
- * did not exist yet, then wired up here once task 4 introduced it. This is a different rule than
- * {@code QuestionService#delete}'s own guard (blocking a Question's deletion when it is used in a
- * {@code TestQuestion}): that one protects a Question already assigned to a Test; this one protects
- * a whole Lesson's question bank from being silently deleted (and orphaning it, or - since the DB
- * FK has no ON DELETE CASCADE - simply failing the DELETE with a raw constraint-violation 500)
- * when it still has Questions.
+ * <b>Revision 2026-09-06:</b> {@code delete} used to BLOCK outright on any {@code Question}
+ * child via {@code QuizErrorCode#LESSON_HAS_QUESTIONS} (QUIZ_006, task 3's original rule). Per
+ * the user's explicit request ("phu huynh can duoc xoa cac du lieu nhu mon hoc, bai hoc, de on,
+ * neu cac du lieu do duoc lien ket voi hoc sinh thi xoa luon nhung du lieu lien quan"), it now
+ * cascades instead - see {@link CascadeDeleteService}'s javadoc for the full cascade design
+ * (every Question/Test that depends on this Lesson is deleted with it, including any Test's
+ * Attempt/score history, and every {@code LessonReport} "bao bai" row for it).
  * <p>
  * FILE IMPORT (added 2026-09-01, "phan bai hoc cho phep import bang file"): {@link
  * #createFromImportRow} is the persistence entry point {@link LessonImportService} calls back
@@ -83,7 +80,7 @@ public class LessonService extends IBase {
     private SubjectService subjectService;
 
     @Autowired
-    private QuestionRepository questionRepository;
+    private CascadeDeleteService cascadeDeleteService;
 
     public LessonResponse create(LessonCreateRequest request) {
         Long parentId = CurrentUser.get().userId();
@@ -155,16 +152,18 @@ public class LessonService extends IBase {
                 .stream().map(LessonResponse::from).toList();
     }
 
+    /**
+     * Deletes this Lesson and, per the 2026-09-06 revision, everything that depends on it - see
+     * {@link CascadeDeleteService#deleteLessonsCascade} (also handles the lesson's own image
+     * file, so this method no longer calls {@link #deleteImageFileQuietly} itself). This method
+     * only does the ownership check first, same "auth here, cascade there" split as {@link
+     * SubjectService#delete}/{@link QuestionService#delete}/{@link TestService#delete}.
+     */
     public void delete(Long id) {
         Long parentId = CurrentUser.get().userId();
         Lesson lesson = getOwnedOrThrow(id, parentId);
-
-        if (questionRepository.query().eq(Question::getLessonId, lesson.getId()).exists()) {
-            throw new BusinessException(QuizErrorCode.LESSON_HAS_QUESTIONS);
-        }
-        deleteImageFileQuietly(lesson.getImagePath());
-        lessonRepository.deleteById(lesson.getId());
-        logInfo("Lesson deleted: id={}, parentId={}", lesson.getId(), parentId);
+        cascadeDeleteService.deleteLessonsCascade(List.of(lesson.getId()));
+        logInfo("Lesson deleted (cascade): id={}, parentId={}", lesson.getId(), parentId);
     }
 
     /**

@@ -9,7 +9,6 @@ import vn.org.thn.service.app.quiz.dto.TestCreateFromLessonsRequest;
 import vn.org.thn.service.app.quiz.dto.TestCreateRequest;
 import vn.org.thn.service.app.quiz.dto.TestDetailResponse;
 import vn.org.thn.service.app.quiz.dto.TestResponse;
-import vn.org.thn.service.app.quiz.entity.Attempt;
 import vn.org.thn.service.app.quiz.entity.Lesson;
 import vn.org.thn.service.app.quiz.entity.Question;
 import vn.org.thn.service.app.quiz.entity.QuestionType;
@@ -20,7 +19,6 @@ import vn.org.thn.service.app.quiz.entity.TestQuestion;
 import vn.org.thn.service.app.quiz.entity.TestStatus;
 import vn.org.thn.service.app.quiz.entity.TestType;
 import vn.org.thn.service.app.quiz.exception.QuizErrorCode;
-import vn.org.thn.service.app.quiz.repository.AttemptRepository;
 import vn.org.thn.service.app.quiz.repository.LessonRepository;
 import vn.org.thn.service.app.quiz.repository.QuestionRepository;
 import vn.org.thn.service.app.quiz.repository.StudentRepository;
@@ -70,10 +68,10 @@ public class TestService extends IBase {
     private TestQuestionRepository testQuestionRepository;
 
     @Autowired
-    private AttemptRepository attemptRepository;
+    private StudentService studentService;
 
     @Autowired
-    private StudentService studentService;
+    private CascadeDeleteService cascadeDeleteService;
 
     @Autowired
     private QuestionService questionService;
@@ -253,17 +251,22 @@ public class TestService extends IBase {
                 .stream().map(TestResponse::from).toList();
     }
 
+    /**
+     * Deletes this Test and, per the 2026-09-06 revision, its Attempts/AttemptAnswer rows (and
+     * any speaking-answer audio files) too - see {@link CascadeDeleteService#deleteTestsCascade}.
+     * Used to BLOCK outright via {@code TEST_HAS_ATTEMPTS} (QUIZ_009) "to avoid losing result
+     * history" instead - per the user's explicit choice (AskUserQuestion 2026-09-06: "Cho xoa
+     * luon, mat lich su diem") this is no longer protected; deleting an already-attempted Test
+     * now permanently loses its score history. This method only does the ownership check first,
+     * same "auth here, cascade there" split as {@link SubjectService#delete}/{@link
+     * LessonService#delete}/{@link QuestionService#delete}.
+     */
     @Transactional
     public void delete(Long id) {
         Long parentId = CurrentUser.get().userId();
         Test test = getOwnedOrThrow(id, parentId);
-
-        if (attemptRepository.query().eq(Attempt::getTestId, id).exists()) {
-            throw new BusinessException(QuizErrorCode.TEST_HAS_ATTEMPTS);
-        }
-        testQuestionRepository.delete().eq(TestQuestion::getTestId, id).execute();
-        testRepository.deleteById(test.getId());
-        logInfo("Test deleted: id={}, parentId={}", test.getId(), parentId);
+        cascadeDeleteService.deleteTestsCascade(List.of(test.getId()));
+        logInfo("Test deleted (cascade): id={}, parentId={}", test.getId(), parentId);
     }
 
     /** Loads the Test with id {@code id}, throwing if it doesn't exist or doesn't belong to {@code parentId}. Package-private so task 7's {@code ReportService} can reuse it. */

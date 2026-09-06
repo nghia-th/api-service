@@ -110,13 +110,12 @@ public class SubjectApi extends BaseCtl {
 
     @Operation(
             summary = "Delete a subject",
-            description = "Blocked while the Subject still has Lesson children - delete or move its lessons first. Only the owning Parent can delete their own Subject."
+            description = "CASCADES (2026-09-06 revision) - deletes every Lesson/Question/Test that depends on this Subject, including any Test's Attempt/score history, plus its Timetable/lesson-preparation/library-link rows. No longer blocked by Lesson children (was QUIZ_005 - see CascadeDeleteService's javadoc). Only the owning Parent can delete their own Subject. Irreversible."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted successfully - no response body"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted successfully (with everything that depended on it) - no response body"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This subject does not belong to the current parent - COMMON_004 FORBIDDEN"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No subject with this id - COMMON_005 NOT_FOUND"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Subject still has lessons - QUIZ_005 SUBJECT_HAS_LESSONS")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No subject with this id - COMMON_005 NOT_FOUND")
     })
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> delete(@Parameter(description = "Subject id") @PathVariable Long id) {

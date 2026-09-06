@@ -121,13 +121,12 @@ public class LessonApi extends BaseCtl {
 
     @Operation(
             summary = "Delete a lesson",
-            description = "Blocked if the lesson still has questions - delete those first (QUIZ_006). Only the owning Parent (via the Lesson's Subject) can delete it. Its image file (if any) is deleted along with it."
+            description = "CASCADES (2026-09-06 revision) - deletes every Question under this Lesson and every Test that has any of them, including any Test's Attempt/score history, plus every lesson-report ('bao bai') row for it. No longer blocked by Question children (was QUIZ_006 - see CascadeDeleteService's javadoc). Only the owning Parent (via the Lesson's Subject) can delete it. Its image file (if any) is deleted along with it. Irreversible."
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted successfully - no response body"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Deleted successfully (with everything that depended on it) - no response body"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "This lesson does not belong to the current parent - COMMON_004 FORBIDDEN"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No lesson with this id - COMMON_005 NOT_FOUND"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Lesson still has questions - QUIZ_006 LESSON_HAS_QUESTIONS")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No lesson with this id - COMMON_005 NOT_FOUND")
     })
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> delete(@Parameter(description = "Lesson id") @PathVariable Long id) {
